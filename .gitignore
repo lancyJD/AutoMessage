@@ -1,6 +1,7 @@
 __pycache__/
 .pytest_cache/
 *.py[cod]
+instagram/login_state.db
 *.db
 *.sqlite
 *.sqlite3
