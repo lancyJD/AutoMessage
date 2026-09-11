@@ -5,4 +5,5 @@ instagram/login_state.db
 *.db
 *.sqlite
 *.sqlite3
-.env
+#.env
+.idea
