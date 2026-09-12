@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="mF6iBKA0QZBBYu0Mzf6ijD">
+<head data-page-node-id="Teq2IN8MryRxh3uX6xhSLa">
+  <meta charset="UTF-8" data-page-node-id="ZTrth64XEh9kSXFJQrMJGh">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="akihTvcOo5Vsx3ZknDH2Sv">
+  <title>IG 粉丝提取器</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 100%;
+      min-height: 460px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Microsoft YaHei', sans-serif;
+      background: #f5efe8;
+      color: #44403c;
+      overflow-x: hidden;
+    }
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-thumb { background: #d4c9bc; border-radius: 3px; }
+
+    .header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 14px 16px; background: #fff;
+      border-bottom: 1px solid #e8e0d6;
+    }
+    .header h2 { font-size: 16px; font-weight: 700; color: #292524; }
+    .header .sub { font-size: 11px; color: #a8a29e; margin-left: auto; }
+
+    .login-notice {
+      background: #fff4e6; border: 1px solid #ffd8a8; border-radius: 8px;
+      padding: 10px 14px; margin: 10px 16px 0; font-size: 12px; color: #cc6600;
+      display: none; line-height: 1.5;
+    }
+    .login-notice.show { display: block; }
+    .login-notice a { color: #fb7185; cursor: pointer; text-decoration: underline; }
+
+    .card {
+      background: #fff; border-radius: 10px; padding: 14px; margin: 12px 16px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+
+    .field { margin-bottom: 12px; }
+    .field:last-child { margin-bottom: 0; }
+    .field label {
+      display: block; font-size: 12px; font-weight: 600; color: #44403c; margin-bottom: 5px;
+    }
+    .field .hint { font-size: 11px; color: #a8a29e; margin-top: 4px; line-height: 1.5; }
+    .field input {
+      width: 100%; padding: 9px 12px; border: 2px solid #e8e0d6; border-radius: 8px;
+      font-size: 13px; outline: none; transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    .field input:focus { border-color: #fb7185; }
+    .field input:disabled { background: #faf7f4; color: #a8a29e; }
+
+    .btn {
+      padding: 10px 14px; border: none; border-radius: 8px; font-size: 13px;
+      font-weight: 600; cursor: pointer; transition: all 0.15s;
+      font-family: inherit;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #fb7185; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #f43f5e; }
+    .btn-secondary { background: #e8e0d6; color: #44403c; }
+    .btn-secondary:hover:not(:disabled) { background: #d4c9bc; }
+    .btn-danger { background: #fef2f2; color: #dc2626; }
+    .btn-danger:hover:not(:disabled) { background: #fee2e2; }
+
+    #btn-extract { width: 100%; }
+
+    /* 进度 */
+    .progress-area { margin: 0 16px 4px; display: none; }
+    .progress-area.show { display: block; }
+    .progress-bar { height: 6px; background: #e8e0d6; border-radius: 3px; overflow: hidden; }
+    .progress-fill {
+      height: 100%; width: 0%; background: linear-gradient(90deg, #fb7185, #f43f5e);
+      transition: width 0.3s ease;
+    }
+    .progress-text {
+      font-size: 11px; color: #78716c; margin-top: 5px;
+      display: flex; justify-content: space-between;
+    }
+    .progress-text .rate { color: #a8a29e; }
+
+    /* 状态提示 */
+    .msg-box {
+      margin: 10px 16px 0; padding: 9px 12px; border-radius: 8px;
+      font-size: 12px; line-height: 1.5; display: none;
+    }
+    .msg-box.show { display: block; }
+    .msg-box.error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+    .msg-box.success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+    .msg-box.info { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+
+    /* 结果区 */
+    #result-area { display: none; }
+    #result-area.show { display: block; }
+
+    .stat-row { display: flex; gap: 8px; margin-bottom: 10px; }
+    .stat-box {
+      flex: 1; text-align: center; background: #f5efe8; border-radius: 8px; padding: 8px 4px;
+    }
+    .stat-num { display: block; font-size: 17px; font-weight: 700; color: #292524; }
+    .stat-num.accent { color: #fb7185; }
+    .stat-label { font-size: 10px; color: #a8a29e; }
+
+    .list-head {
+      font-size: 11px; color: #78716c; margin: 10px 0 4px;
+      display: flex; justify-content: space-between;
+    }
+    .user-list {
+      max-height: 190px; overflow-y: auto; border: 1px solid #f0ebe4;
+      border-radius: 8px; background: #fcfaf8;
+    }
+    .user-list .u-item {
+      padding: 6px 10px; font-size: 12px; color: #292524;
+      border-bottom: 1px solid #f5f0ea; display: flex; gap: 6px;
+    }
+    .user-list .u-item:last-child { border-bottom: none; }
+    .user-list .u-idx { color: #c4bdb3; min-width: 34px; font-variant-numeric: tabular-nums; }
+    .user-list .u-name { font-weight: 600; word-break: break-all; }
+    .user-list .u-more { padding: 6px 10px; font-size: 11px; color: #a8a29e; text-align: center; }
+
+    .action-row { display: flex; gap: 8px; margin-top: 12px; }
+    .action-row .btn { flex: 1; }
+
+    .footer-tip {
+      font-size: 11px; color: #a8a29e; padding: 4px 16px 16px; line-height: 1.6;
+    }
+
+    .toast {
+      position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+      background: #292524; color: #fff; padding: 8px 16px; border-radius: 8px;
+      font-size: 12px; z-index: 100; display: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2); white-space: nowrap;
+    }
+
+    /* ===== 会员系统 UI（auth- 前缀） ===== */
+    .auth-bar {
+      display: flex; align-items: center; gap: 6px;
+      background: #fff; border: 1px solid #e8e0d6; border-radius: 10px;
+      padding: 8px 10px; margin: 10px 16px 0; font-size: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .auth-bar .auth-email { font-weight: 600; color: #292524; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+    .auth-plan {
+      font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
+      background: linear-gradient(135deg, #ffe4e6, #fecdd3); color: #e11d48;
+    }
+    .auth-plan.expired { background: #f5f0ea; color: #a8a29e; }
+    .auth-spacer { flex: 1; }
+    .auth-bar button { padding: 4px 9px; font-size: 12px; border-radius: 8px; border: none; cursor: pointer; font-family: inherit; font-weight: 600; }
+    .auth-bar .auth-link { background: none; color: #e11d48; padding: 4px 6px; }
+    .auth-bar .auth-link:hover { background: #fff1f2; }
+
+    .auth-view {
+      background: #fff; border-radius: 10px; padding: 14px; margin: 10px 16px 0;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .auth-tabs { display: flex; gap: 6px; margin-bottom: 10px; background: #f5efe8; border-radius: 8px; padding: 3px; }
+    .auth-tab { background: transparent; color: #78716c; flex: 1; border-radius: 7px; padding: 7px; border: none; cursor: pointer; font-family: inherit; font-weight: 600; font-size: 13px; }
+    .auth-tab.active { background: #fff; color: #e11d48; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .auth-input {
+      width: 100%; padding: 9px 12px; border: 2px solid #e8e0d6; border-radius: 8px;
+      font-size: 13px; outline: none; transition: border-color 0.15s;
+      font-family: inherit; background: #fff; color: #44403c;
+    }
+    .auth-input:focus { border-color: #fb7185; }
+    .auth-view label, .auth-panel label { display: block; font-size: 12px; font-weight: 600; color: #44403c; margin: 10px 0 4px; }
+    .auth-btn {
+      width: 100%; background: #fb7185; color: #fff; margin-top: 12px; padding: 10px;
+      border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .auth-btn:hover:not(:disabled) { background: #f43f5e; }
+    .auth-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .auth-msg { font-size: 12px; margin: 6px 0; min-height: 14px; line-height: 1.5; }
+    .auth-msg.err { color: #dc2626; }
+    .auth-msg.ok { color: #16a34a; }
+    .auth-hint { font-size: 11px; color: #a8a29e; margin-top: 8px; line-height: 1.5; }
+
+    .auth-panel {
+      background: #fff; border-radius: 10px; padding: 12px 14px; margin: 10px 16px 0;
+      font-size: 13px; color: #44403c; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .auth-panel h4 { margin: 0 0 8px; font-size: 13px; color: #292524; display: flex; align-items: center; font-weight: 700; }
+    .auth-panel .auth-close { margin-left: auto; background: none; color: #a8a29e; padding: 2px 7px; font-size: 15px; border-radius: 7px; border: none; cursor: pointer; }
+    .auth-panel .auth-close:hover { background: #f5efe8; color: #292524; }
+    .auth-kv { display: flex; justify-content: space-between; padding: 4px 0; color: #78716c; font-size: 12px; }
+    .auth-kv b { color: #292524; font-weight: 600; }
+    .auth-panel .auth-btn-row { display: flex; gap: 8px; margin-top: 10px; }
+    .auth-panel .auth-btn-row button { flex: 1; }
+    .ghost {
+      background: #f5efe8; color: #44403c; border: none; border-radius: 8px;
+      padding: 8px 10px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .ghost:hover { background: #e8e0d6; }
+    .auth-device { display: flex; align-items: center; gap: 8px; padding: 7px 4px; border-top: 1px solid #f0ebe4; font-size: 12px; }
+    .auth-device .meta { flex: 1; color: #78716c; }
+    .auth-device .meta .name { font-weight: 600; color: #292524; }
+    .auth-device .meta .sub { color: #a8a29e; font-size: 11px; }
+    .auth-device.current { background: #fff1f2; border-radius: 9px; padding-left: 8px; border-top: none; margin-top: 4px; }
+    .auth-device button { background: #fff1f2; color: #dc2626; padding: 5px 9px; font-size: 12px; border-radius: 8px; border: none; cursor: pointer; }
+    .auth-device button:hover { background: #fee2e2; }
+    .auth-center { text-align: center; color: #a8a29e; font-size: 12px; padding: 14px; }
+    .auth-divider { height: 1px; background: #f0ebe4; margin: 10px 0; }
+
+    /* ===== 钱包支付面板 ===== */
+    .wallet-net { font-weight: 700; color: #e11d48; font-size: 13px; margin-bottom: 6px; }
+    .wallet-qr {
+      width: 180px; height: 180px; border-radius: 14px; padding: 8px; background: #fff;
+      border: 1.5px solid #e8e0d6; box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+    .wallet-amt { font-size: 17px; font-weight: 800; color: #292524; margin: 8px 0 2px; }
+    .wallet-ord { font-size: 11px; color: #a8a29e; font-family: Consolas, monospace; }
+    .wallet-addr {
+      font-size: 11px; color: #78716c; font-family: Consolas, monospace;
+      background: #fdf2f4; border: 1px dashed #f9a8b4; border-radius: 9px;
+      padding: 7px 8px; margin: 8px 0; word-break: break-all; text-align: left;
+    }
+    .wallet-btns { display: flex; gap: 8px; margin-top: 4px; }
+    .wallet-btns button { flex: 1; }
+    .wallet-step {
+      text-align: left; font-size: 11px; color: #a8a29e; line-height: 1.7;
+      padding-left: 18px; margin: 8px 0 4px;
+    }
+
+    /* ===== 购买前添加管理员引导 ===== */
+    .support-note {
+      background: linear-gradient(135deg, #fff7ed, #fef2f8);
+      border: 1px solid #fbcfe8; border-radius: 10px;
+      padding: 9px 10px; margin-bottom: 10px; text-align: left;
+    }
+    .support-note .txt { font-size: 12px; color: #9d174d; font-weight: 600; line-height: 1.5; margin-bottom: 7px; }
+    .support-btn {
+      width: 100%; background: linear-gradient(135deg, #2aabee, #0088cc);
+      color: #fff; padding: 9px; font-size: 13px; border-radius: 9px; border: none; cursor: pointer;
+      font-family: inherit; font-weight: 600;
+      box-shadow: 0 3px 10px rgba(42,171,238,.3);
+    }
+    .support-btn:hover:not(:disabled) { filter: brightness(1.08); }
+  </style>
+</head>
+<body data-page-node-id="lCUeK7H5uwIqLHPgrfDxql">
+
+  <!-- ===== 设备面板（登录后展开） ===== -->
+  <div id="devices-panel" class="auth-panel" hidden data-page-node-id="Dn0BwHTRsrFQCWJaQBCRqr">
+    <h4 data-page-node-id="VuUcwbHN3EqkpWT0KFdwIL">我的设备 <button class="auth-close" data-close="devices-panel" data-page-node-id="wf77zH7FYDcDXpquAkG7vh">×</button></h4>
+    <div id="devices-list" class="auth-center" data-page-node-id="jxatgqtdgVhAjZorGauYAN">加载中…</div>
+  </div>
+
+  <!-- ===== 提取功能主体（登录后可见） ===== -->
+  <div id="app-view" data-page-node-id="TXNEyv2BdbKX53y5jY24l2">
+
+  <div class="login-notice" id="login-notice" data-page-node-id="VV9EHwggc4vvRapimtQDlK">
+    未检测到 Instagram 登录状态。请先在 <a id="open-instagram" data-page-node-id="T0iBCxaEw3NkUajcY9A4S7">instagram.com</a> 登录，再回来使用。
+  </div>
+
+  <div class="card" data-page-node-id="l6DBBCPm3LC98jO7vmpv7J">
+    <div class="field" data-page-node-id="8YhU67PHTBFKwG6JLBepqM">
+      <label for="input-user" data-page-node-id="7uqwp2nHwi2Hn7cUsBjBBe">博主用户名</label>
+      <input type="text" id="input-user" placeholder="例如：sleek_skrr 或 @sleek_skrr" autocomplete="off" data-page-node-id="qeIfdgEgtBQQVGgLKqpGAZ" />
+    </div>
+    <div class="field" data-page-node-id="BkEsufL7T7QZEYP8mi3z3X">
+      <label for="input-count" data-page-node-id="5qXqGPO2PSGegAay2vMV7j">提取数量</label>
+      <input type="number" id="input-count" placeholder="留空或填 0 = 提取全部粉丝" min="0" step="1" data-page-node-id="TJQUVGODJ3PJLbqElYAscH" />
+      <div class="hint" data-page-node-id="cGY427tFs7wT7ZViSIWjsG">留空 / 填 0 → 无限提取，直到抓完该博主的全部粉丝</div>
+    </div>
+    <div style="margin-top:14px; display:flex; gap:8px;" data-page-node-id="2ESw44Cy0ekOTIJuoIUYH2">
+      <button class="btn btn-primary" id="btn-extract" data-page-node-id="AfBV23F1E5iJxBxqIWATph">开始提取</button>
+      <button class="btn btn-danger" id="btn-stop" style="display:none; white-space:nowrap;" data-page-node-id="g2ulbe13OgpRuVHUQJACOZ">停止</button>
+    </div>
+  </div>
+
+  <div class="progress-area" id="progress-area" data-page-node-id="cmpdssHxAcDAP1eXYiBrrO">
+    <div class="progress-bar" data-page-node-id="HhiojOYMDajY2dDU86IO3u"><div class="progress-fill" id="progress-fill" data-page-node-id="GpjjyoB4xahgP69Y3xr1AG"></div></div>
+    <div class="progress-text" data-page-node-id="T3T1QTpTaZx7B02aiFcjwl">
+      <span id="progress-text" data-page-node-id="ef88CHlxBFMoNIrEp1yn2I">准备中...</span>
+      <span class="rate" id="progress-rate" data-page-node-id="oUHBTziPjCfga620bv7BY9"></span>
+    </div>
+  </div>
+
+  <div class="msg-box" id="msg-box" data-page-node-id="gDRhgl9kVcAPf3btUo4LEL"></div>
+
+  <div id="result-area" data-page-node-id="70WcGLQ75fPIDtO9qUjAXU">
+    <div class="card" data-page-node-id="kz5F8cjURLdqeiZOGebVCY">
+      <div class="stat-row" data-page-node-id="94AJMyFZARyzqOXCoNNVNa">
+        <div class="stat-box" data-page-node-id="UQEr2hxl0gEFasxFctBWRo">
+          <span class="stat-num accent" id="stat-extracted" data-page-node-id="6rF4lh72OVh0P2dJS64hCQ">0</span>
+          <span class="stat-label" data-page-node-id="EUcD9hF8sxMeEzzViJRl8m">已提取</span>
+        </div>
+        <div class="stat-box" data-page-node-id="IaJ9FwKmXIMxLjzN5dugA6">
+          <span class="stat-num" id="stat-total" data-page-node-id="NI8BdbKaB8JJ5Ws4LtzzXl">-</span>
+          <span class="stat-label" data-page-node-id="KvDpgMC5JrA67oZOBJXMKM">博主粉丝总数</span>
+        </div>
+        <div class="stat-box" data-page-node-id="qArWOKQXvbrufybsxaFgJc">
+          <span class="stat-num" id="stat-dup" data-page-node-id="uEpFhaUZIkJPoA3U6YrKVb">0</span>
+          <span class="stat-label" data-page-node-id="aaPBCHFEUPCw2sXkccVieH">去重</span>
+        </div>
+      </div>
+
+      <div class="list-head" data-page-node-id="dyRqmItB1K1Xi9669j4Ks9">
+        <span data-page-node-id="uBwG9AwAOvhEeEpvqhOXNW">提取结果预览</span>
+        <span id="list-count" data-page-node-id="Vp65BXoJN5od0N5CYnv8xd"></span>
+      </div>
+      <div class="user-list" id="user-list" data-page-node-id="o8LEaoj1S8WmKfiep3WpCH"></div>
+
+      <div class="action-row" data-page-node-id="5RbTQ0JgvhyiqUAOf2rNYQ">
+        <button class="btn btn-primary" id="btn-download" data-page-node-id="AsogkcvBzmJug4bDqnS6GI">⬇ 保存 TXT</button>
+        <button class="btn btn-secondary" id="btn-copy" data-page-node-id="Qy9GkpYcpFVk0JVlIuG1kD">📋 复制全部</button>
+      </div>
+      <div class="action-row" data-page-node-id="XDFkdTs39sUAd7y7diMcdD">
+        <button class="btn btn-secondary" id="btn-copy-100" data-page-node-id="kfo1GiojRfRAXoDAK5enUK">复制前 100 个</button>
+        <button class="btn btn-secondary" id="btn-clear" data-page-node-id="OvFEVpbgEyodlS44cz8FF5">清空结果</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-tip" data-page-node-id="76g1cdeXqJ3Gb0u6n1VORA">
+    • 提取在 Instagram 页面内完成，不会触发风控<br data-page-node-id="zyPeuHKiAhbwv2MGT9FLqZ">
+    • 每次自动间隔约 1 秒，避免被限流<br data-page-node-id="aWHq82GXNx3t9Vy4LzuLET">
+    • 点「停止」立即生效；关闭侧边栏也会自动停止<br data-page-node-id="MNXVQBwWy1EdTHQGqfGl7x">
+    • 中断后重开（再次点图标）会自动保留已提取的用户名，可直接保存<br data-page-node-id="RTIw5cIbyvEJUnIApPa6mR">
+    • 工具以右侧边栏常驻运行，点击页面其它位置不会关闭<br data-page-node-id="7PNK3UlJz6NPHaDLDx1HGz">
+    • 提取过程中请勿关闭 Instagram 标签页
+  </div>
+
+  </div><!-- /app-view -->
+
+  <div class="toast" id="toast" data-page-node-id="TUTE2A5P7rElvs6rG9n78W"></div>
+
+  <!-- 会员系统脚本（经典脚本，SW 与 popup 通用） -->
+  <script src="lib/config.js"></script>
+  <script src="lib/device.js"></script>
+  <script src="lib/auth.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
