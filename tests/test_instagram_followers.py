@@ -1,4 +1,4 @@
-from instagram.followers import Follower, format_follower, followers_next_url, is_follower_entry, is_followers_api_url, unique_followers
+from instagram.followers import Follower, format_api_request, format_follower, followers_next_url, is_follower_entry, is_followers_api_url, normalize_profile_username, unique_followers
 
 
 def test_unique_followers_outputs_each_profile_once():
@@ -39,3 +39,16 @@ def test_replaces_followers_api_cursor():
         "https://www.instagram.com/api/v1/friendships/61992006537/followers/?count=12&max_id=12",
         "abc",
     ).endswith("count=12&max_id=abc")
+
+
+def test_formats_followers_api_request_query_parameters():
+    assert format_api_request(
+        "https://www.instagram.com/api/v1/friendships/61992006537/followers/?count=12&max_id=50&search_surface=follow_list_page"
+    ) == (
+        "[接口请求] 参数：count=12 | max_id=50 | "
+        "search_surface=follow_list_page"
+    )
+
+
+def test_normalizes_profile_username_for_direct_profile_url():
+    assert normalize_profile_username(" @bangguseok.news ") == "bangguseok.news"

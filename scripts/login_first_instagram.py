@@ -9,7 +9,8 @@ if __package__ in {None, ""}:
 from bitbrowser import BitBrowserClient, BrowserService
 from instagram.login import InstagramLoginService
 
-
+# python.exe scripts\login_first_instagram.py --relogin
+# python.exe login_first_instagram.py --relogin
 async def run(account_file: Path, relogin=False) -> int:
     try:
         from playwright.async_api import async_playwright

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "IG 粉丝提取器",
-  "description": "无限提取任意 Instagram 博主的粉丝用户名，提取数量可手动输入，一键导出 TXT 文件",
-  "version": "2.1.0",
+  "name": "IG 用户提取器",
+  "description": "提取 Instagram 粉丝或指定博主近期帖子的评论用户，并导出 TXT 文件",
+  "version": "2.2.1",
   "action": {
     "default_title": "IG 粉丝提取器"
   },
@@ -12,9 +12,24 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://www.instagram.com/*"],
+      "js": ["network-listener-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.instagram.com/*"],
+      "js": ["network-listener-bridge.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    }
+  ],
   "permissions": [
     "scripting",
     "storage",
+    "downloads",
     "unlimitedStorage",
     "sidePanel",
     "alarms"

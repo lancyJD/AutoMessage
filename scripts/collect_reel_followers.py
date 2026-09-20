@@ -10,7 +10,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bitbrowser import BitBrowserClient, BrowserService
-from instagram.followers import collect_followers
+from instagram.followers import collect_profile_followers
 from instagram.login import InstagramLoginService
 
 
@@ -27,14 +27,14 @@ async def main_async(args):
         opened = service.open(result.browser_id)
         browser = await connect(opened.get("ws") or f"http://{opened['http']}")
         page = browser.contexts[0].pages[0]
-        count = await collect_followers(page, args.reel_url)
+        count = await collect_profile_followers(page, args.profile_username)
         print(f"采集完成：{count} 位粉丝")
     return 0
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("reel_url")
+    parser.add_argument("profile_username", help="博主用户名，例如 bangguseok.news 或 @bangguseok.news")
     parser.add_argument("--relogin", action="store_true")
     parser.add_argument("--account-file", type=Path, default=Path(__file__).resolve().parents[1] / "instagram" / "ins_account.md")
     return asyncio.run(main_async(parser.parse_args()))

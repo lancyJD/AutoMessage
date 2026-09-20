@@ -25,21 +25,35 @@ const App = {
   baseCount: 0,     // 当前块开始前的累计数量
   chunkDone: 0,     // 当前块已抓取数量
   startTime: 0,
+  logs: [],
+  logSaved: false,
+  hideFollowers: false,
+  mode: 'followers',
 
   $: (id) => document.getElementById(id),
 
   async init() {
     // 恢复上次输入
-    const saved = await chrome.storage.local.get(['igx_user', 'igx_count']);
+    const saved = await chrome.storage.local.get(['igx_user', 'igx_count', 'igx_hide_followers', 'igx_interaction_user', 'igx_post_count', 'igx_per_post_comment_limit']);
     if (saved.igx_user) this.$('input-user').value = saved.igx_user;
     if (saved.igx_count) this.$('input-count').value = saved.igx_count;
+    this.hideFollowers = saved.igx_hide_followers === true;
+    this.$('hide-followers').checked = this.hideFollowers;
+    if (saved.igx_interaction_user) this.$('interaction-user').value = saved.igx_interaction_user;
+    if (saved.igx_post_count) this.$('post-count').value = saved.igx_post_count;
+    if (saved.igx_per_post_comment_limit != null) this.$('per-post-comment-limit').value = saved.igx_per_post_comment_limit;
 
     this.$('btn-extract').addEventListener('click', () => this.startExtract());
+    this.$('mode-followers').addEventListener('click', () => this.setMode('followers'));
+    this.$('mode-interactions').addEventListener('click', () => this.setMode('interactions'));
+    this.$('start-interactions').addEventListener('click', () => this.startInteractionExtract());
+    this.$('btn-stop-interactions').addEventListener('click', () => this.stopExtract());
     this.$('btn-stop').addEventListener('click', () => this.stopExtract());
     this.$('btn-download').addEventListener('click', () => this.downloadTxt());
     this.$('btn-copy').addEventListener('click', () => this.copyUsernames(0));
     this.$('btn-copy-100').addEventListener('click', () => this.copyUsernames(100));
     this.$('btn-clear').addEventListener('click', () => this.clearResult());
+    this.$('hide-followers').addEventListener('change', event => this.setFollowersHidden(event.target.checked));
     this.$('open-instagram').addEventListener('click', () => {
       chrome.tabs.create({ url: 'https://www.instagram.com/' });
     });
@@ -55,9 +69,13 @@ const App = {
     // 关键：只接受「本轮会话」的消息。否则上次残留的页面脚本会继续广播进度，
     // 重开弹窗时会误显示成"还在提取中"。
     chrome.runtime.onMessage.addListener(msg => {
-      if (!msg || msg.action !== 'extract-progress') return;
+      if (!msg || !['extract-progress', 'extract-log'].includes(msg.action)) return;
       if (!this.running || !this.sessionId) return;
       if (msg.sessionId && msg.sessionId !== this.sessionId) return;
+      if (msg.action === 'extract-log') {
+        this.addLog(msg.message || '收到空日志', msg.level || 'info');
+        return;
+      }
       this.chunkDone = msg.done || 0;
       this.updateProgress();
     });
@@ -67,6 +85,114 @@ const App = {
 
     await this.restoreInterrupted();
     await this.checkLogin();
+  },
+
+  setMode(mode) {
+    this.mode = mode === 'interactions' ? 'interactions' : 'followers';
+    const interactions = this.mode === 'interactions';
+    this.$('mode-followers').setAttribute('aria-selected', String(!interactions));
+    this.$('mode-interactions').setAttribute('aria-selected', String(interactions));
+    this.$('followers-panel').hidden = interactions;
+    this.$('interactions-panel').hidden = !interactions;
+    this.hideMsg();
+  },
+
+  async startInteractionExtract() {
+    if (this.running) return;
+    const username = this.$('interaction-user').value.trim().replace(/^@+/, '');
+    const postCount = parseInt(this.$('post-count').value, 10);
+    const rawPerPostLimit = this.$('per-post-comment-limit').value.trim();
+    const perPostLimit = rawPerPostLimit === '' ? 0 : parseInt(rawPerPostLimit, 10);
+    if (!username) return this.showMsg('请输入博主用户名', 'error');
+    if (!Number.isInteger(postCount) || postCount < 1) {
+      return this.showMsg('帖子数量必须是正整数', 'error');
+    }
+    if (!Number.isInteger(perPostLimit) || perPostLimit < 0) {
+      return this.showMsg('每个帖子提取数量必须是 0 或正整数', 'error');
+    }
+    if (!this.$('collect-comments').checked) return this.showMsg('请至少选择“获取评论用户”', 'error');
+    if (typeof IGX_CONFIG === 'undefined' || IGX_CONFIG.AUTH_ENABLED !== false) {
+      try {
+        const guard = await IGXAuth.requireMembership();
+        if (!guard.ok) { this.blockExtract(guard.reason, guard.offline); return; }
+      } catch (e) {
+        return this.showMsg('⛔ 会员校验异常，已阻止提取：' + (e && e.message), 'error');
+      }
+    }
+
+    await chrome.storage.local.set({
+      igx_interaction_user: username,
+      igx_post_count: postCount,
+      igx_per_post_comment_limit: rawPerPostLimit
+    });
+    this.sessionId = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    await chrome.storage.local.set({ igx_stop: null, igx_buffer: [], igx_state: null });
+    try { await bg('clear-stop'); } catch (e) {}
+    this.openPort(this.sessionId);
+    this.running = true;
+    this.stopped = false;
+    this.usernames = [];
+    this.seen = new Set();
+    this.dupCount = 0;
+    this.target = 0;
+    this.startTime = Date.now();
+    this.profile = { username, followerCount: 0 };
+    this.resetExecutionLog(username);
+    this.addLog(`当前博主 @${username}`);
+    this.addLog(`准备查询最新 ${postCount} 个帖子`);
+    this.addLog(perPostLimit > 0 ? `每个帖子最多提取 ${perPostLimit} 个评论用户` : '每个帖子提取全部评论用户');
+    this.$('stat-total-label').textContent = '已处理帖子';
+    this.$('stat-total').textContent = '0/' + postCount;
+    this.setRunning(true);
+    this.hideMsg();
+    this.hideResult();
+    this.updateProgress('正在查询帖子…');
+
+    try {
+      const postsRes = await bg('resolve-recent-posts', { username, limit: postCount, sessionId: this.sessionId });
+      if (!postsRes.success) throw new Error(postsRes.error || '查询帖子失败');
+      if (postsRes.stopped || this.stopped) {
+        await this.saveBuffer(false);
+        this.updateProgress('已手动停止', true);
+        this.addLog('查询帖子时已停止，保留当前结果', 'warn');
+        await this.saveExecutionLog('stopped');
+        this.renderResult();
+        this.showResult();
+        this.showMsg('⏹ 已停止，可保存当前已获取的结果', 'info');
+        return;
+      }
+      const posts = postsRes.posts || [];
+      this.addLog(`查询到 ${posts.length} 个帖子`, 'success');
+      if (posts.length < postCount) this.addLog(`账号公开帖子不足 ${postCount} 个`, 'warn');
+      this.updateProgress(`正在获取 ${posts.length} 个帖子的评论用户…`);
+
+      const result = await bg('extract-comment-users', {
+        mediaIds: posts.map(post => post.mediaId), sessionId: this.sessionId, perPostLimit
+      });
+      if (!result.success) throw new Error(result.error || '评论用户采集失败');
+      this.usernames = (result.users || []).map(user => user.username).filter(Boolean);
+      this.seen = new Set(this.usernames);
+      this.dupCount = Number(result.duplicateCount || 0);
+      this.$('stat-total').textContent = `${result.processedPosts || 0}/${posts.length}`;
+      await this.saveBuffer(!result.stopped);
+      this.updateProgress(result.stopped ? '已手动停止' : '评论用户采集完成', true);
+      this.addLog(`评论用户采集完成，共 ${this.usernames.length} 人，去重 ${this.dupCount} 条`, 'success');
+      await this.saveExecutionLog(result.stopped ? 'stopped' : 'completed');
+      this.renderResult();
+      this.showResult();
+      this.showMsg(
+        result.stopped
+          ? `⏹ 已停止，已保留 ${this.usernames.length} 个评论用户，可保存 TXT`
+          : `✓ 已从 ${result.processedPosts || 0} 个帖子获取 ${this.usernames.length} 个评论用户`,
+        result.stopped ? 'info' : 'success'
+      );
+    } catch (error) {
+      this.addLog(`采集失败：${error.message || error}`, 'error');
+      await this.saveExecutionLog('failed');
+      this.showMsg('✗ ' + (error.message || error), 'error');
+    } finally {
+      this.endRun();
+    }
   },
 
   // ============== 会话 / 停止控制 ==============
@@ -170,6 +296,8 @@ const App = {
 
   async startExtract() {
     if (this.running) return;
+    this.mode = 'followers';
+    this.$('stat-total-label').textContent = '博主粉丝总数';
 
     // ===== 会员守卫：未登录 / 会员失效 / 设备超限 一律在此拦截（核心功能唯一校验点）=====
     if (typeof IGX_CONFIG === 'undefined' || IGX_CONFIG.AUTH_ENABLED !== false) {
@@ -213,6 +341,9 @@ const App = {
     this.baseCount = 0;
     this.chunkDone = 0;
     this.startTime = 0;
+    this.resetExecutionLog(rawUser);
+    this.addLog(`当前博主 @${rawUser}`);
+    this.addLog('正在解析博主主页…');
 
     const stopBtn = this.$('btn-stop');
     stopBtn.disabled = false;
@@ -226,6 +357,8 @@ const App = {
     // 第 1 步：解析博主
     const resolveRes = await bg('resolve-profile', { username: rawUser });
     if (!resolveRes.success || this.stopped) {
+      this.addLog(this.stopped ? '已取消解析博主' : `解析失败：${resolveRes.error || '未知错误'}`, 'error');
+      this.saveExecutionLog(this.stopped ? 'stopped' : 'failed');
       this.endRun();
       if (!resolveRes.success) this.showMsg('✗ ' + resolveRes.error, 'error');
       else this.showMsg('⏹ 已取消', 'info');
@@ -238,6 +371,8 @@ const App = {
       : '未知';
 
     this.updateProgress(`已找到 @${this.profile.username}，开始提取粉丝...`);
+    this.addLog(`已解析博主 ID：${this.profile.userId}`, 'success');
+    this.addLog('开始请求粉丝列表');
 
     // 第 2 步：分块抓取
     await this.extractLoop();
@@ -250,10 +385,14 @@ const App = {
   async stopExtract() {
     if (!this.running || this.stopped) return;
     this.stopped = true;
+    this.addLog('收到停止请求，正在结束当前页…', 'warn');
 
     const btn = this.$('btn-stop');
     btn.disabled = true;
     btn.textContent = '停止中...';
+    const interactionBtn = this.$('btn-stop-interactions');
+    interactionBtn.disabled = true;
+    interactionBtn.textContent = '停止中...';
     this.updateProgress('正在停止...');
 
     try { await chrome.storage.local.set({ igx_stop: this.sessionId }); } catch (e) {}
@@ -267,6 +406,9 @@ const App = {
     this.teardownPort();
     this.setRunning(false);
     this.$('btn-stop').disabled = false;
+    this.$('btn-stop').textContent = '停止';
+    this.$('btn-stop-interactions').disabled = false;
+    this.$('btn-stop-interactions').textContent = '停止';
   },
 
   // 会员校验不通过时：提示原因并引导到登录页 / 会员面板
@@ -345,6 +487,8 @@ const App = {
     this.$('progress-rate').textContent = '';
 
     if (total === 0) {
+      this.addLog('未提取到粉丝', 'warn');
+      this.saveExecutionLog(this.stopped ? 'stopped' : 'completed');
       this.showMsg('未提取到任何用户名。请确认已登录 Instagram，且该博主存在。', 'error');
       return;
     }
@@ -359,6 +503,9 @@ const App = {
     } else {
       this.showMsg(`✓ 提取完成，共 ${total.toLocaleString('en-US')} 个用户名`, 'success');
     }
+
+    this.addLog(this.stopped ? `采集已停止，共 ${total} 人` : `采集完成，共 ${total} 人`, this.stopped ? 'warn' : 'success');
+    this.saveExecutionLog(this.stopped ? 'stopped' : 'completed');
 
     this.renderResult();
     this.showResult();
@@ -414,6 +561,11 @@ const App = {
     this.$('stat-dup').textContent = this.dupCount.toLocaleString('en-US');
 
     const list = this.$('user-list');
+    if (this.hideFollowers) {
+      list.innerHTML = '<div class="u-hidden">粉丝列表已隐藏</div>';
+      this.$('list-count').textContent = `共 ${this.usernames.length.toLocaleString('en-US')} 个（已隐藏）`;
+      return;
+    }
     const preview = this.usernames.slice(0, PREVIEW_MAX);
     let html = preview.map((u, i) =>
       `<div class="u-item"><span class="u-idx">${i + 1}.</span><span class="u-name">@${this.esc(u)}</span></div>`
@@ -436,6 +588,7 @@ const App = {
     this.hideResult();
     this.hideMsg();
     this.$('progress-area').classList.remove('show');
+    this.$('execution-log').classList.remove('show');
     this.$('progress-fill').style.width = '0%';
     this.$('stat-total').textContent = '-';
     this.toast('结果已清空');
@@ -444,11 +597,18 @@ const App = {
   setRunning(running) {
     const btn = this.$('btn-extract');
     const stop = this.$('btn-stop');
+    const interactionStop = this.$('btn-stop-interactions');
     btn.disabled = running;
     btn.textContent = running ? '提取中...' : '开始提取';
     stop.style.display = running ? 'block' : 'none';
+    interactionStop.style.display = running && this.mode === 'interactions' ? 'block' : 'none';
     this.$('input-user').disabled = running;
     this.$('input-count').disabled = running;
+    this.$('start-interactions').disabled = running;
+    this.$('start-interactions').textContent = running && this.mode === 'interactions' ? '获取中...' : '开始获取评论用户';
+    this.$('interaction-user').disabled = running;
+    this.$('post-count').disabled = running;
+    this.$('per-post-comment-limit').disabled = running;
   },
 
   showResult() { this.$('result-area').classList.add('show'); },
@@ -461,6 +621,72 @@ const App = {
   },
   hideMsg() { this.$('msg-box').className = 'msg-box'; },
 
+  async setFollowersHidden(hidden) {
+    this.hideFollowers = hidden;
+    await chrome.storage.local.set({ igx_hide_followers: hidden });
+    if (this.usernames.length) this.renderResult();
+  },
+
+  resetExecutionLog(username) {
+    this.logs = [];
+    this.logSaved = false;
+    this.$('execution-log').classList.add('show');
+    this.$('execution-log-profile').textContent = username ? `当前博主 @${username}` : '';
+    this.$('execution-log-list').replaceChildren();
+  },
+
+  addLog(message, level = 'info') {
+    const now = new Date();
+    const time = now.toLocaleTimeString('zh-CN', { hour12: false });
+    const entry = { time, message: String(message), level };
+    this.logs.push(entry);
+    if (this.logs.length > 300) this.logs.shift();
+
+    const list = this.$('execution-log-list');
+    const line = document.createElement('div');
+    line.className = `execution-log-line ${level}`;
+    const stamp = document.createElement('span');
+    stamp.className = 'execution-log-time';
+    stamp.textContent = time;
+    const text = document.createElement('span');
+    text.textContent = entry.message;
+    line.append(stamp, text);
+    list.appendChild(line);
+    while (list.children.length > 300) list.firstChild.remove();
+    list.scrollTop = list.scrollHeight;
+  },
+
+  async saveExecutionLog(outcome) {
+    if (this.logSaved || !this.logs.length) return;
+    this.logSaved = true;
+    const now = new Date();
+    const pad = value => String(value).padStart(2, '0');
+    const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const clock = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const username = ((this.profile && this.profile.username) || (this.mode === 'interactions' ? this.$('interaction-user').value : this.$('input-user').value) || 'unknown')
+      .replace(/[\\/:*?"<>|]/g, '_');
+    const content = [
+      `博主：@${username}`,
+      `结果：${outcome}`,
+      ...this.logs.map(log => `${log.time} ${log.message}`),
+      ''
+    ].join('\n');
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
+    try {
+      await chrome.downloads.download({
+        url,
+        filename: `${this.mode === 'interactions' ? 'IG-comment-logs' : 'IG-follower-logs'}/${date}/${clock}_${username}.log`,
+        saveAs: false,
+        conflictAction: 'uniquify'
+      });
+    } catch (error) {
+      this.logSaved = false;
+      this.addLog(`日志文件保存失败：${error.message || error}`, 'error');
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  },
+
   // ============== 导出 ==============
 
   buildText(limit = 0) {
@@ -471,11 +697,13 @@ const App = {
   downloadTxt() {
     if (!this.usernames.length) return this.toast('暂无可保存的数据');
 
-    const name = (this.profile && this.profile.username) || this.$('input-user').value.trim().replace(/^@+/, '') || 'followers';
+    const name = (this.profile && this.profile.username) || (this.mode === 'interactions' ? this.$('interaction-user').value : this.$('input-user').value).trim().replace(/^@+/, '') || 'followers';
     const ts = new Date();
     const pad = n => String(n).padStart(2, '0');
     const stamp = `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}`;
-    const filename = `IG_${name}_粉丝${this.usernames.length}个_${stamp}.txt`;
+    const filename = this.mode === 'interactions'
+      ? `评论用户_${name}_${this.usernames.length}个_${stamp}.txt`
+      : `IG_${name}_粉丝${this.usernames.length}个_${stamp}.txt`;
 
     const content = this.buildText();
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });

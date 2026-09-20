@@ -38,6 +38,28 @@
       box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     }
 
+    .mode-tabs {
+      display: flex; gap: 8px; margin: 12px 16px 0; padding: 4px;
+      border-radius: 12px; background: #eadfd5;
+    }
+    .mode-tab {
+      flex: 1; border: 0; border-radius: 9px; padding: 10px 8px;
+      background: transparent; color: #78716c; font: 700 13px/1.2 inherit;
+      cursor: pointer; transition: transform .15s, box-shadow .15s, color .15s;
+    }
+    .mode-tab[aria-selected="true"] {
+      color: #fff; background: linear-gradient(135deg, #ff4f70, #f62258);
+      box-shadow: 0 5px 14px rgba(246, 34, 88, .32);
+    }
+    .mode-tab:active { transform: scale(.98); }
+    .choice-row {
+      display: flex; align-items: center; gap: 9px; padding: 9px 10px;
+      border: 1px solid #eee6dd; border-radius: 8px; margin-top: 7px;
+      font-size: 12px; font-weight: 600;
+    }
+    .choice-row input { width: 17px; height: 17px; accent-color: #f43f5e; }
+    .choice-row.disabled { color: #a8a29e; background: #faf7f4; }
+
     .field { margin-bottom: 12px; }
     .field:last-child { margin-bottom: 0; }
     .field label {
@@ -51,6 +73,17 @@
     }
     .field input:focus { border-color: #fb7185; }
     .field input:disabled { background: #faf7f4; color: #a8a29e; }
+    .choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .field label.choice-row {
+      display: flex; align-items: center; gap: 7px; min-width: 0; margin: 0;
+      padding: 9px 10px; white-space: nowrap; font-size: clamp(10px, 2.2vw, 12px);
+    }
+    .field .choice-row input {
+      width: 17px; height: 17px; padding: 0; flex: 0 0 17px; margin: 0;
+      border-width: 1px; accent-color: #f43f5e;
+    }
+    .hide-followers label { display: flex; align-items: center; justify-content: space-between; margin: 0; }
+    .hide-followers input { width: 18px; height: 18px; padding: 0; accent-color: #fb7185; cursor: pointer; }
 
     .btn {
       padding: 10px 14px; border: none; border-radius: 8px; font-size: 13px;
@@ -81,6 +114,21 @@
       display: flex; justify-content: space-between;
     }
     .progress-text .rate { color: #a8a29e; }
+
+    /* 执行日志 */
+    .execution-log { margin: 8px 16px 16px; display: none; }
+    .execution-log.show { display: block; }
+    .execution-log-head { display: flex; justify-content: space-between; color: #57534e; font-size: 12px; font-weight: 700; margin-bottom: 5px; }
+    .execution-log-profile { color: #a8a29e; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; }
+    .execution-log-list {
+      height: 110px; overflow-y: auto; border: 1px solid #e8e0d6; border-radius: 8px;
+      background: #292524; color: #e7e5e4; padding: 6px 0; font: 11px/1.55 Consolas, "Microsoft YaHei", monospace;
+    }
+    .execution-log-line { display: flex; gap: 7px; padding: 2px 9px; word-break: break-word; }
+    .execution-log-time { color: #a8a29e; flex: 0 0 auto; }
+    .execution-log-line.warn { color: #fcd34d; }
+    .execution-log-line.error { color: #fca5a5; }
+    .execution-log-line.success { color: #86efac; }
 
     /* 状态提示 */
     .msg-box {
@@ -120,6 +168,7 @@
     .user-list .u-idx { color: #c4bdb3; min-width: 34px; font-variant-numeric: tabular-nums; }
     .user-list .u-name { font-weight: 600; word-break: break-all; }
     .user-list .u-more { padding: 6px 10px; font-size: 11px; color: #a8a29e; text-align: center; }
+    .user-list .u-hidden { padding: 18px 10px; color: #a8a29e; font-size: 12px; text-align: center; }
 
     .action-row { display: flex; gap: 8px; margin-top: 12px; }
     .action-row .btn { flex: 1; }
@@ -255,7 +304,12 @@
     未检测到 Instagram 登录状态。请先在 <a id="open-instagram" data-page-node-id="T0iBCxaEw3NkUajcY9A4S7">instagram.com</a> 登录，再回来使用。
   </div>
 
-  <div class="card" data-page-node-id="l6DBBCPm3LC98jO7vmpv7J">
+  <div class="mode-tabs" role="tablist" aria-label="采集模式">
+    <button id="mode-followers" class="mode-tab" role="tab" aria-selected="true" aria-controls="followers-panel">获取粉丝</button>
+    <button id="mode-interactions" class="mode-tab" role="tab" aria-selected="false" aria-controls="interactions-panel">获取帖子互动用户</button>
+  </div>
+
+  <div class="card" id="followers-panel" role="tabpanel" data-page-node-id="l6DBBCPm3LC98jO7vmpv7J">
     <div class="field" data-page-node-id="8YhU67PHTBFKwG6JLBepqM">
       <label for="input-user" data-page-node-id="7uqwp2nHwi2Hn7cUsBjBBe">博主用户名</label>
       <input type="text" id="input-user" placeholder="例如：sleek_skrr 或 @sleek_skrr" autocomplete="off" data-page-node-id="qeIfdgEgtBQQVGgLKqpGAZ" />
@@ -265,9 +319,42 @@
       <input type="number" id="input-count" placeholder="留空或填 0 = 提取全部粉丝" min="0" step="1" data-page-node-id="TJQUVGODJ3PJLbqElYAscH" />
       <div class="hint" data-page-node-id="cGY427tFs7wT7ZViSIWjsG">留空 / 填 0 → 无限提取，直到抓完该博主的全部粉丝</div>
     </div>
+    <div class="field hide-followers">
+      <label for="hide-followers">隐藏结果中的用户名 <input type="checkbox" id="hide-followers" /></label>
+      <div class="hint">开启后仍正常采集和导出，只隐藏页面预览。</div>
+    </div>
+
     <div style="margin-top:14px; display:flex; gap:8px;" data-page-node-id="2ESw44Cy0ekOTIJuoIUYH2">
       <button class="btn btn-primary" id="btn-extract" data-page-node-id="AfBV23F1E5iJxBxqIWATph">开始提取</button>
       <button class="btn btn-danger" id="btn-stop" style="display:none; white-space:nowrap;" data-page-node-id="g2ulbe13OgpRuVHUQJACOZ">停止</button>
+    </div>
+  </div>
+
+  <div class="card" id="interactions-panel" role="tabpanel" hidden>
+    <div class="field">
+      <label for="interaction-user">博主用户名</label>
+      <input type="text" id="interaction-user" placeholder="例如：sleek_skrr 或 @sleek_skrr" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="post-count">获取前面多少个帖子</label>
+      <input type="number" id="post-count" value="2" min="1" step="1" />
+      <div class="hint">从最新帖子开始，本次默认获取前 2 个帖子。</div>
+    </div>
+    <div class="field">
+      <label for="per-post-comment-limit">每个帖子提取数量</label>
+      <input type="number" id="per-post-comment-limit" placeholder="留空或填 0 = 获取全部" min="0" step="1" />
+      <div class="hint">大于 0 时，每个帖子最多获取指定数量的去重评论用户。</div>
+    </div>
+    <div class="field">
+      <label>采集用户类型</label>
+      <div class="choice-grid">
+        <label class="choice-row" for="collect-comments"><input id="collect-comments" type="checkbox" checked />获取评论用户</label>
+        <label class="choice-row disabled" for="collect-likes"><input id="collect-likes" type="checkbox" disabled />获取点赞用户（暂未开放）</label>
+      </div>
+    </div>
+    <div style="display:flex; gap:8px">
+      <button class="btn btn-primary" id="start-interactions" style="flex:1">开始获取评论用户</button>
+      <button class="btn btn-danger" id="btn-stop-interactions" style="display:none">停止</button>
     </div>
   </div>
 
@@ -290,7 +377,7 @@
         </div>
         <div class="stat-box" data-page-node-id="IaJ9FwKmXIMxLjzN5dugA6">
           <span class="stat-num" id="stat-total" data-page-node-id="NI8BdbKaB8JJ5Ws4LtzzXl">-</span>
-          <span class="stat-label" data-page-node-id="KvDpgMC5JrA67oZOBJXMKM">博主粉丝总数</span>
+          <span class="stat-label" id="stat-total-label" data-page-node-id="KvDpgMC5JrA67oZOBJXMKM">博主粉丝总数</span>
         </div>
         <div class="stat-box" data-page-node-id="qArWOKQXvbrufybsxaFgJc">
           <span class="stat-num" id="stat-dup" data-page-node-id="uEpFhaUZIkJPoA3U6YrKVb">0</span>
@@ -323,6 +410,14 @@
     • 工具以右侧边栏常驻运行，点击页面其它位置不会关闭<br data-page-node-id="7PNK3UlJz6NPHaDLDx1HGz">
     • 提取过程中请勿关闭 Instagram 标签页
   </div>
+
+  <section class="execution-log" id="execution-log">
+    <div class="execution-log-head">
+      <span>执行日志</span>
+      <span class="execution-log-profile" id="execution-log-profile"></span>
+    </div>
+    <div class="execution-log-list" id="execution-log-list" aria-live="polite"></div>
+  </section>
 
   </div><!-- /app-view -->
 

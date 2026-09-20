@@ -19,7 +19,7 @@ def unique_followers(items):
 
 
 def format_follower(index, follower):
-    return f"[粉丝 {index:03d}] id：{follower.username} | 名称：{follower.full_name} | 主页：{follower.profile_url}"
+    return f"[粉丝 {index:03d}] 用户名：{follower.username} | 名称：{follower.full_name} | 主页：{follower.profile_url}"
 
 
 def is_follower_entry(href: str | None, text: str) -> bool:
@@ -39,6 +39,19 @@ def followers_next_url(url: str, max_id: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
+def format_api_request(url: str) -> str:
+    parameters = parse_qsl(urlsplit(url).query, keep_blank_values=True)
+    rendered = " | ".join(f"{key}={value}" for key, value in parameters)
+    return f"[接口请求] 参数：{rendered or '无'}"
+
+
+def normalize_profile_username(value: str) -> str:
+    username = value.strip().lstrip("@")
+    if not username or "/" in username or any(char.isspace() for char in username):
+        raise ValueError("请输入有效的 Instagram 博主用户名，例如 bangguseok.news")
+    return username.lower()
+
+
 async def _fetch_api_page(page, url, headers):
     return await page.evaluate(
         """async ({url, headers}) => {
@@ -54,6 +67,7 @@ async def _log_follower_api_responses(responses, log):
     for response in responses:
         if not is_followers_api_url(response.url):
             continue
+        log(format_api_request(response.url))
         try:
             payload = await response.json()
         except Exception:
@@ -79,20 +93,9 @@ async def _followers_link(page):
     raise RuntimeError("未找到博主主页的粉丝入口")
 
 
-async def collect_followers(page, reel_url, log=print, idle_rounds=3):
+async def _collect_from_profile_page(page, log=print, idle_rounds=3):
     api_responses = []
     page.on("response", lambda response: api_responses.append(response))
-    log("[步骤 1/5] 打开 Reels")
-    await page.goto(reel_url, wait_until="domcontentloaded")
-    log("[步骤 2/5] 进入博主主页")
-    author_link = page.locator('a[href$="/reels/"]:not([href="/reels/"])').first
-    await author_link.click()
-    await page.wait_for_timeout(1500)
-    log(f"[页面] 当前主页：{page.url}")
-    if page.url.rstrip("/").endswith("/reels"):
-        await page.goto(page.url.rsplit("/reels", 1)[0] + "/", wait_until="domcontentloaded")
-        await page.wait_for_timeout(1500)
-        log(f"[页面] 切换博主主页：{page.url}")
     log("[步骤 3/5] 打开粉丝列表")
     followers_link = await _followers_link(page)
     await followers_link.click()
@@ -133,7 +136,9 @@ async def collect_followers(page, reel_url, log=print, idle_rounds=3):
         if key.lower().startswith("x-")
     }
     while next_max_id:
-        result = await _fetch_api_page(page, followers_next_url(api_response.url, str(next_max_id)), headers)
+        next_url = followers_next_url(api_response.url, str(next_max_id))
+        log(format_api_request(next_url))
+        result = await _fetch_api_page(page, next_url, headers)
         payload = result.get("payload") or {}
         users = payload.get("users", [])
         log(f"[接口分页] HTTP {result['status']} | users={len(users)} | next_max_id={payload.get('next_max_id')}")
@@ -151,3 +156,27 @@ async def collect_followers(page, reel_url, log=print, idle_rounds=3):
             log(format_follower(len(seen), follower))
         next_max_id = payload.get("next_max_id")
     return len(seen)
+
+
+async def collect_profile_followers(page, profile_username, log=print, idle_rounds=3):
+    username = normalize_profile_username(profile_username)
+    log("[步骤 1/4] 打开博主主页")
+    await page.goto(f"https://www.instagram.com/{username}/", wait_until="domcontentloaded")
+    await page.wait_for_timeout(1500)
+    log(f"[页面] 当前博主主页：{page.url}")
+    return await _collect_from_profile_page(page, log=log, idle_rounds=idle_rounds)
+
+
+async def collect_followers(page, reel_url, log=print, idle_rounds=3):
+    log("[步骤 1/5] 打开 Reels")
+    await page.goto(reel_url, wait_until="domcontentloaded")
+    log("[步骤 2/5] 进入博主主页")
+    author_link = page.locator('a[href$="/reels/"]:not([href="/reels/"])').first
+    await author_link.click()
+    await page.wait_for_timeout(1500)
+    log(f"[页面] 当前主页：{page.url}")
+    if page.url.rstrip("/").endswith("/reels"):
+        await page.goto(page.url.rsplit("/reels", 1)[0] + "/", wait_until="domcontentloaded")
+        await page.wait_for_timeout(1500)
+        log(f"[页面] 切换博主主页：{page.url}")
+    return await _collect_from_profile_page(page, log=log, idle_rounds=idle_rounds)

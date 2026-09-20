@@ -101,6 +101,315 @@ async function checkLoginInPage() {
   return !!(m && m[1]);
 }
 
+function describeNextMaxId(value) {
+  if (value == null) return { raw: null, numericPrefix: null };
+  const raw = String(value);
+  const match = raw.match(/^(\d+)(?:\||$)/);
+  return { raw, numericPrefix: match ? match[1] : null };
+}
+
+function extractRecentMediaIds(value, limit = 2) {
+  const max = Math.max(1, Number(limit) || 2);
+  const found = [];
+  const seen = new Set();
+  const visit = item => {
+    if (found.length >= max || item == null) return;
+    if (Array.isArray(item)) {
+      for (const child of item) visit(child);
+      return;
+    }
+    if (typeof item !== 'object') return;
+    const mediaId = item.id || item.pk;
+    const shortcode = item.shortcode || item.code;
+    if (mediaId && shortcode && !seen.has(String(mediaId))) {
+      seen.add(String(mediaId));
+      found.push({ mediaId: String(mediaId), shortcode: String(shortcode) });
+      if (found.length >= max) return;
+    }
+    for (const child of Object.values(item)) visit(child);
+  };
+  visit(value);
+  return found;
+}
+
+async function extractRecentPostsFromCurrentPageInMainWorld(limit) {
+  const max = Math.max(1, Number(limit) || 2);
+  const found = [];
+  const seen = new Set();
+  const visit = value => {
+    if (found.length >= max || value == null) return;
+    if (Array.isArray(value)) {
+      for (const child of value) visit(child);
+      return;
+    }
+    if (typeof value !== 'object') return;
+    const mediaId = value.id || value.pk;
+    const shortcode = value.shortcode || value.code;
+    if (mediaId && shortcode && !seen.has(String(mediaId))) {
+      seen.add(String(mediaId));
+      found.push({ mediaId: String(mediaId), shortcode: String(shortcode) });
+      if (found.length >= max) return;
+    }
+    for (const child of Object.values(value)) visit(child);
+  };
+  for (const script of document.querySelectorAll('script[type="application/json"], script:not([src])')) {
+    if (found.length >= max) break;
+    const text = script.textContent || '';
+    if (!text || (!text.includes('shortcode') && !text.includes('"code"'))) continue;
+    try { visit(JSON.parse(text)); } catch (e) {}
+  }
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  const shortcodeToMediaId = shortcode => {
+    let value = 0n;
+    for (const char of shortcode) {
+      const digit = alphabet.indexOf(char);
+      if (digit < 0) return null;
+      value = value * 64n + BigInt(digit);
+    }
+    return value > 0n ? value.toString() : null;
+  };
+  for (const anchor of document.querySelectorAll('a[href*="/p/"], a[href*="/reel/"], a[href*="/tv/"]')) {
+    if (found.length >= max) break;
+    const href = anchor.getAttribute('href') || '';
+    const match = href.match(/\/(?:p|reel|tv)\/([^/?#]+)/);
+    if (!match) continue;
+    const shortcode = match[1];
+    const mediaId = shortcodeToMediaId(shortcode);
+    if (!mediaId || seen.has(mediaId)) continue;
+    seen.add(mediaId);
+    found.push({ mediaId, shortcode });
+  }
+  return found;
+}
+
+function clickPostsTabInMainWorld() {
+  const icon = document.querySelector('svg[aria-label="帖子"]');
+  const link = icon && icon.closest('a');
+  if (!link) return false;
+  link.click();
+  return true;
+}
+
+const graphqlPostWaiters = new Map();
+
+function waitForGraphqlPosts(tabId, timeoutMs = 6000, sessionId = null) {
+  return new Promise(resolve => {
+    let finished = false;
+    let stopTimer = null;
+    const finish = posts => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeoutTimer);
+      if (stopTimer) clearTimeout(stopTimer);
+      graphqlPostWaiters.delete(tabId);
+      resolve(posts);
+    };
+    const timeoutTimer = setTimeout(() => finish([]), timeoutMs);
+    const checkStopped = async () => {
+      if (finished || !sessionId) return;
+      if (await isExtractionStopped(sessionId)) return finish([]);
+      stopTimer = setTimeout(checkStopped, 150);
+    };
+    graphqlPostWaiters.set(tabId, finish);
+    checkStopped();
+  });
+}
+
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (!message || message.action !== 'IGX_GRAPHQL_RESPONSE') return false;
+  const tabId = sender && sender.tab && sender.tab.id;
+  const waiter = graphqlPostWaiters.get(tabId);
+  if (waiter && Array.isArray(message.posts) && message.posts.length) waiter(message.posts);
+  return false;
+});
+
+async function fetchCommentsPageInMainWorld(rawMediaId, minId) {
+  const mediaId = String(rawMediaId || '').trim();
+  if (!mediaId) throw new Error('缺少帖子 ID');
+  const url = new URL(`https://www.instagram.com/api/v1/media/${encodeURIComponent(mediaId)}/comments/`);
+  url.searchParams.set('can_support_threading', 'true');
+  url.searchParams.set('permalink_enabled', 'false');
+  if (minId) url.searchParams.set('min_id', String(minId));
+  const response = await fetch(url.toString(), {
+    credentials: 'include',
+    headers: { 'X-IG-App-ID': '936619743392459', 'X-Requested-With': 'XMLHttpRequest', 'Accept': '*/*' }
+  });
+  const data = await response.json().catch(() => null);
+  return {
+    status: response.status,
+    comments: Array.isArray(data && data.comments) ? data.comments : [],
+    commentCount: Number(data && data.comment_count || 0),
+    nextMinId: data && (data.next_min_id != null ? data.next_min_id : data.next_max_id) != null
+      ? String(data.next_min_id != null ? data.next_min_id : data.next_max_id) : null,
+    hasMore: Boolean(data && (data.has_more_comments || data.has_more_headload_comments)),
+    requireLogin: Boolean(data && data.require_login),
+    message: data && (data.message || data.error_type) || null
+  };
+}
+
+async function collectCommentUsersInMainWorld(tabId, mediaIds, sessionId, rawPerPostLimit = 0) {
+  const users = [];
+  const seen = new Set();
+  const requestedPerPostLimit = Math.max(0, Number(rawPerPostLimit) || 0);
+  let duplicateCount = 0;
+  let processedPosts = 0;
+  for (let index = 0; index < mediaIds.length; index++) {
+    if (await isExtractionStopped(sessionId)) break;
+    const mediaId = String(mediaIds[index]);
+    let cursor = null;
+    let loaded = 0;
+    let expected = 0;
+    let pageNo = 0;
+    let effectiveLimit = requestedPerPostLimit;
+    const perPostSeen = new Set();
+    const usedCursors = new Set();
+    sendExtractionLog(sessionId, `帖子 ${index + 1}/${mediaIds.length}：开始获取评论`);
+    while (true) {
+      pageNo++;
+      const [injected] = await chrome.scripting.executeScript({
+        target: { tabId }, world: 'MAIN', func: fetchCommentsPageInMainWorld, args: [mediaId, cursor]
+      });
+      const page = injected && injected.result;
+      if (!page) throw new Error('Instagram 页面未返回评论接口数据');
+      if (page.requireLogin) throw new Error('登录已过期，请重新登录 Instagram');
+      if (page.status !== 200) throw new Error(`评论接口返回 HTTP ${page.status}${page.message ? `：${page.message}` : ''}`);
+      expected = Math.max(expected, page.commentCount || 0);
+      if (requestedPerPostLimit > 0 && expected > 0) {
+        effectiveLimit = Math.min(requestedPerPostLimit, expected);
+      }
+      if (pageNo === 1) {
+        sendExtractionLog(sessionId, `帖子 ${index + 1}/${mediaIds.length}：评论用户总数=${expected}`);
+        sendExtractionLog(sessionId, `帖子 ${index + 1}/${mediaIds.length}：本帖目标=${effectiveLimit > 0 ? effectiveLimit : '全部'}`);
+      }
+      loaded += page.comments.length;
+      for (const comment of page.comments) {
+        const user = comment && comment.user;
+        const username = user && user.username;
+        if (!username) continue;
+        if (perPostSeen.has(username)) { duplicateCount++; continue; }
+        perPostSeen.add(username);
+        if (seen.has(username)) duplicateCount++;
+        else {
+          seen.add(username);
+          users.push({ id: String(user.pk || user.id || ''), username, fullName: user.full_name || '' });
+        }
+        if (effectiveLimit > 0 && perPostSeen.size >= effectiveLimit) break;
+      }
+      sendExtractionLog(sessionId, `帖子 ${index + 1} 第 ${pageNo} 页：返回 ${page.comments.length} 条，累计 ${loaded}/${expected || '?'}`);
+      if (await isExtractionStopped(sessionId)) {
+        sendExtractionLog(sessionId, `帖子 ${index + 1}：已停止，保留当前页结果`, 'warn');
+        break;
+      }
+      if (effectiveLimit > 0 && perPostSeen.size >= effectiveLimit) {
+        sendExtractionLog(sessionId, `帖子 ${index + 1}/${mediaIds.length}：已提取 ${perPostSeen.size} 人，达到本帖目标`, 'success');
+        break;
+      }
+      if ((expected > 0 && loaded >= expected) || !page.hasMore || !page.nextMinId) break;
+      if (usedCursors.has(page.nextMinId)) break;
+      usedCursors.add(page.nextMinId);
+      cursor = page.nextMinId;
+    }
+    processedPosts++;
+  }
+  return { users, duplicateCount, processedPosts, stopped: await isExtractionStopped(sessionId) };
+}
+
+// 运行在 Instagram 主页面上下文：请求会保留页面的 Origin、Cookie 与浏览器指纹。
+// 函数会被序列化注入，因此不能引用本文件的外部变量。
+async function fetchFollowersPageInMainWorld(rawUserId, startCursor) {
+  const userId = String(rawUserId || '').trim();
+  if (!userId) throw new Error('缺少博主数字 ID');
+  const url = new URL(`https://www.instagram.com/api/v1/friendships/${encodeURIComponent(userId)}/followers/`);
+  url.searchParams.set('count', '12');
+  url.searchParams.set('search_surface', 'follow_list_page');
+  if (startCursor) url.searchParams.set('max_id', String(startCursor));
+
+  const response = await fetch(url.toString(), {
+    credentials: 'include',
+    headers: {
+      'X-IG-App-ID': '936619743392459',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept': '*/*'
+    }
+  });
+  const data = await response.json().catch(() => null);
+  return {
+    status: response.status,
+    users: Array.isArray(data && data.users) ? data.users : [],
+    nextMaxId: data && data.next_max_id != null ? String(data.next_max_id) : null,
+    shouldLimitListOfFollowers: data ? data.should_limit_list_of_followers : null,
+    hasMore: data ? data.has_more : null,
+    requireLogin: Boolean(data && data.require_login),
+    message: data && (data.message || data.error_type) || null
+  };
+}
+
+const backgroundDelay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function isExtractionStopped(sessionId) {
+  const state = await chrome.storage.local.get(['igx_stop']);
+  return state.igx_stop === 'ALL' || (!!sessionId && state.igx_stop === sessionId);
+}
+
+function sendExtractionLog(sessionId, message, level = 'info') {
+  chrome.runtime.sendMessage({ action: 'extract-log', sessionId: sessionId || null, message, level }).catch(() => {});
+}
+
+async function extractFollowersInMainWorld(tabId, userId, maxCount, startCursor, sessionId) {
+  const users = [];
+  let cursor = startCursor || null;
+  let pageNumber = 0;
+
+  while (users.length < maxCount) {
+    if (await isExtractionStopped(sessionId)) {
+      sendExtractionLog(sessionId, '采集已停止', 'warn');
+      return { users, hasNext: Boolean(cursor), cursor, stopped: true };
+    }
+    pageNumber++;
+    sendExtractionLog(sessionId, `第 ${pageNumber} 页：请求粉丝接口${cursor ? `，游标 ${cursor}` : ''}`);
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: fetchFollowersPageInMainWorld,
+      args: [userId, cursor]
+    });
+    const page = injected && injected.result;
+    if (!page) throw new Error('Instagram 页面未返回粉丝接口数据');
+    if (page.requireLogin) throw new Error('登录已过期，请重新登录 Instagram');
+    if (page.status === 429) {
+      sendExtractionLog(sessionId, '接口限流 HTTP 429，等待 6 秒后重试', 'warn');
+      await backgroundDelay(6000);
+      pageNumber--;
+      continue;
+    }
+    if (page.status !== 200) {
+      throw new Error(`粉丝接口返回 HTTP ${page.status}${page.message ? `：${page.message}` : ''}`);
+    }
+    const cursorInfo = describeNextMaxId(page.nextMaxId);
+    sendExtractionLog(
+      sessionId,
+      `第 ${pageNumber} 页响应：should_limit_list_of_followers=${page.shouldLimitListOfFollowers ?? 'null'} | has_more=${page.hasMore ?? 'null'} | next_max_id=${cursorInfo.raw ?? 'null'} | next_max_id_numeric_prefix=${cursorInfo.numericPrefix ?? 'null'}`
+    );
+    if (!page.users.length) {
+      sendExtractionLog(sessionId, `第 ${pageNumber} 页返回 0 人，没有更多粉丝`);
+      return { users, hasNext: false, cursor: null, stopped: false };
+    }
+    for (const user of page.users) {
+      if (!user.username) continue;
+      users.push({ id: String(user.pk || user.id || ''), username: user.username, fullName: user.full_name || '' });
+      if (users.length >= maxCount) break;
+    }
+    cursor = page.nextMaxId;
+    sendExtractionLog(sessionId, `第 ${pageNumber} 页返回 ${page.users.length} 人，本块累计 ${users.length} 人`);
+    if (!cursor) {
+      sendExtractionLog(sessionId, '没有下一页，采集完成', 'success');
+      return { users, hasNext: false, cursor: null, stopped: false };
+    }
+    if (users.length < maxCount) await backgroundDelay(800 + Math.random() * 900);
+  }
+  return { users, hasNext: Boolean(cursor), cursor, stopped: false };
+}
+
 // 分块提取粉丝（每次调用最多抓 maxCount 个，返回游标供下次继续）
 // sessionId 用于停止控制与进度归属：
 //   1) 每翻一页前读一次 storage 里的停止标志
@@ -153,6 +462,18 @@ async function extractFollowersInPage(rawUserId, maxCount, startCursor, sessionI
     } catch (e) {}
   };
 
+  const reportLog = (message, level = 'info') => {
+    try {
+      const p = chrome.runtime.sendMessage({
+        action: 'extract-log',
+        message,
+        level,
+        sessionId: sessionId || null
+      });
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (e) {}
+  };
+
   const allUsers = [];
   let cursor = startCursor || null;
   let hasNext = true;
@@ -167,9 +488,11 @@ async function extractFollowersInPage(rawUserId, maxCount, startCursor, sessionI
     url.searchParams.set('count', String(PAGE_COUNT));
     url.searchParams.set('search_surface', SEARCH_SURFACE);
     if (cursor) url.searchParams.set('max_id', cursor);
+    reportLog(`第 ${guard} 页：请求粉丝接口${cursor ? `，游标 ${cursor}` : ''}`);
 
     let resp;
     try {
+      //
       resp = await fetch(url.toString(), {
         headers: {
           'X-IG-App-ID': APP_ID,
@@ -179,16 +502,21 @@ async function extractFollowersInPage(rawUserId, maxCount, startCursor, sessionI
         credentials: 'include'
       });
     } catch (e) {
+      reportLog(`第 ${guard} 页请求失败，2 秒后重试`, 'warn');
       if (await sleep(2000)) { stopped = true; break; }
       continue;
     }
 
     // 429 限流：等待后重试同一页（等待期间可被停止打断）
     if (resp.status === 429) {
+      reportLog('接口限流 HTTP 429，等待 6 秒后重试', 'warn');
       if (await sleep(6000)) { stopped = true; break; }
       continue;
     }
-    if (resp.status !== 200) break;
+    if (resp.status !== 200) {
+      reportLog(`第 ${guard} 页返回 HTTP ${resp.status}，停止采集`, 'error');
+      break;
+    }
 
     let data;
     try { data = await resp.json(); } catch (e) { break; }
@@ -198,7 +526,11 @@ async function extractFollowersInPage(rawUserId, maxCount, startCursor, sessionI
     }
 
     const users = Array.isArray(data && data.users) ? data.users : [];
-    if (users.length === 0) { hasNext = false; break; }
+    if (users.length === 0) {
+      reportLog(`第 ${guard} 页返回 0 人，没有更多粉丝`);
+      hasNext = false;
+      break;
+    }
 
     for (const user of users) {
       if (user.username) {
@@ -212,6 +544,7 @@ async function extractFollowersInPage(rawUserId, maxCount, startCursor, sessionI
     }
 
     report(allUsers.length);
+    reportLog(`第 ${guard} 页返回 ${users.length} 人，本块累计 ${allUsers.length} 人`);
 
     cursor = data.next_max_id != null ? String(data.next_max_id) : null;
     hasNext = !!cursor;
@@ -221,6 +554,9 @@ async function extractFollowersInPage(rawUserId, maxCount, startCursor, sessionI
       if (await sleep(800 + Math.random() * 900)) { stopped = true; break; }
     }
   }
+
+  if (stopped) reportLog('采集已停止', 'warn');
+  else if (!hasNext) reportLog('没有下一页，采集完成', 'success');
 
   return { users: allUsers, hasNext, cursor, stopped };
 }
@@ -278,19 +614,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const sessionId = msg.sessionId || null;
 
         const tab = await findInstagramTab();
-        const [result] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: extractFollowersInPage,
-          args: [userId, chunkSize, cursor, sessionId]
-        });
-
-        if (result && result.result) {
-          return { success: true, ...result.result };
-        }
-        throw new Error('提取失败，请确认已登录 Instagram');
+        const result = await extractFollowersInMainWorld(tab.id, userId, chunkSize, cursor, sessionId);
+        return { success: true, ...result };
       } catch (e) {
         return { success: false, error: e.message || String(e) };
       }
+    },
+
+    async 'resolve-recent-posts'(msg) {
+      try {
+        const limit = Math.max(1, Math.min(Number(msg.limit) || 2, 50));
+        const username = String(msg.username || '').trim().toLowerCase().replace(/^@+/, '');
+        if (!username) throw new Error('请输入博主用户名');
+        const tab = await findInstagramTab();
+        const sessionId = msg.sessionId || null;
+        const capturedPosts = waitForGraphqlPosts(tab.id, 6000, sessionId);
+        await chrome.tabs.update(tab.id, { url: `https://www.instagram.com/${encodeURIComponent(username)}/` });
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id }, world: 'MAIN', func: clickPostsTabInMainWorld
+        }).catch(() => {});
+        const graphqlPosts = await capturedPosts;
+        if (await isExtractionStopped(sessionId)) {
+          return { success: true, posts: [], source: 'stopped', stopped: true };
+        }
+        if (graphqlPosts.length) {
+          return { success: true, posts: graphqlPosts.slice(0, limit), source: 'graphql' };
+        }
+        const [injected] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id }, world: 'MAIN', func: extractRecentPostsFromCurrentPageInMainWorld,
+          args: [limit]
+        });
+        const posts = injected && Array.isArray(injected.result) ? injected.result : [];
+        if (!posts.length) throw new Error('主页中没有解析到帖子，请确认账号已登录且主页帖子可见');
+        return { success: true, posts, source: 'page-fallback' };
+      } catch (e) { return { success: false, error: e.message || String(e) }; }
+    },
+
+    async 'extract-comment-users'(msg) {
+      try {
+        const mediaIds = Array.isArray(msg.mediaIds) ? msg.mediaIds.filter(Boolean) : [];
+        if (!mediaIds.length) throw new Error('缺少帖子 ID');
+        const tab = await findInstagramTab();
+        const result = await collectCommentUsersInMainWorld(
+          tab.id, mediaIds, msg.sessionId || null, Math.max(0, Number(msg.perPostLimit) || 0)
+        );
+        return { success: true, ...result };
+      } catch (e) { return { success: false, error: e.message || String(e) }; }
     },
 
     // 请求停止：写入停止标志，页面内的抓取循环最多 300ms 内退出
