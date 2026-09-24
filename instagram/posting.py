@@ -62,7 +62,13 @@ class PlaywrightPostDriver:
     CREATE = re.compile(r"^(新帖子|创建|Create|New post)$", re.I)
     NEXT = re.compile(r"^(继续|Next)$", re.I)
     SHARE = re.compile(r"^(分享|Share)$", re.I)
-    SUCCESS = re.compile(r"(帖子已分享|Your post has been shared|Post shared)", re.I)
+    SUCCESS = re.compile(
+        r"(帖子已分享|Reels?\s*已分享|Your (?:post|reel) has been shared|(?:Post|Reel) shared)",
+        re.I,
+    )
+    REELS_NOTICE = re.compile(r"(视频帖现在会以\s*Reels\s*的形式分享|video posts? (?:will|are now) .*reels)", re.I)
+    CONFIRM = re.compile(r"^(确定|OK|Got it)$", re.I)
+    DONE = re.compile(r"^(完成|Done)$", re.I)
 
     def __init__(self, page, timeout_ms=30_000):
         self.page = page
@@ -80,10 +86,23 @@ class PlaywrightPostDriver:
         dismiss = self.page.get_by_role("button", name=re.compile(r"^(以后再说|Not Now)$", re.I))
         if await dismiss.count():
             await dismiss.click(timeout=5_000)
+        await self._confirm_reels_notice()
+
+    async def _confirm_reels_notice(self, wait_ms=0):
+        notice = self.page.get_by_text(self.REELS_NOTICE)
+        if await notice.count() == 0:
+            if not wait_ms:
+                return
+            try:
+                await notice.first.wait_for(state="visible", timeout=wait_ms)
+            except Exception:
+                return
+        await self.page.get_by_role("button", name=self.CONFIRM).last.click(timeout=5_000)
 
     async def upload(self, paths):
         file_input = self.page.locator('input[type="file"][multiple]')
         await file_input.set_input_files(paths, timeout=self.timeout_ms)
+        await self._confirm_reels_notice(wait_ms=5_000)
         await self.page.get_by_role("heading", name=re.compile(r"裁剪|Crop", re.I)).wait_for(timeout=self.timeout_ms)
 
     async def _next(self):
@@ -109,4 +128,11 @@ class PlaywrightPostDriver:
 
     async def wait_success(self):
         await self.page.get_by_text(self.SUCCESS).first.wait_for(timeout=self.timeout_ms)
+        done = self.page.get_by_role("button", name=self.DONE).last
+        try:
+            await done.wait_for(state="visible", timeout=5_000)
+            await done.click(timeout=5_000)
+        except Exception:
+            # Some post types use a transient success toast without a dialog.
+            pass
         return None

@@ -36,3 +36,11 @@ python -m scripts.download_material search "旅行风景" --count 5
 ```
 
 YouTube 支持关键词搜索；TikTok 和 Instagram 需要提供具体帖子链接。部分视频格式需要系统已经安装 FFmpeg。
+
+### 下载后立即发布 Instagram
+
+```powershell
+D:\soft\anaconda\envs\bitbrowser_platform\python.exe -m scripts.download_and_publish_instagram "素材页面地址"
+```
+
+程序会下载或复用 `C:\Users\DELL\Pictures\sucai` 中的素材，生成 `.txt` 后立即发布，不会再次询问。发布成功或失败后，本地素材和元数据都会保留。新记录使用 `.txt`，已有 `.text` 仍可兼容读取。

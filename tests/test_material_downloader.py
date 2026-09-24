@@ -149,7 +149,7 @@ def test_download_rejects_path_outside_root(tmp_path):
 def test_existing_complete_record_is_skipped_before_real_download(tmp_path):
     directory = tmp_path / "TikTok_trip_748"
     media = directory / "trip.mp4"
-    metadata = directory / "TikTok_trip_748.text"
+    metadata = directory / "TikTok_trip_748.txt"
     directory.mkdir()
     media.write_bytes(b"media")
     metadata.write_text(f"标题:trip\n内容:hello\n素材:{media.resolve()}\n", encoding="utf-8")
@@ -227,7 +227,7 @@ def test_duplicate_lookup_uses_platform_and_id_when_title_changes(tmp_path):
     media = directory / "old.mp4"
     directory.mkdir()
     media.write_bytes(b"media")
-    (directory / "TikTok_old-title_748.text").write_text(
+    (directory / "TikTok_old-title_748.txt").write_text(
         f"标题:old-title\n内容:\n素材:{media.resolve()}\n", encoding="utf-8"
     )
     info = {"id": "748", "title": "new-title", "extractor_key": "TikTok", "webpage_url": "https://t.test/748"}
@@ -241,7 +241,7 @@ def test_corrupt_existing_metadata_is_rewritten_after_download(tmp_path):
     directory = tmp_path / "TikTok_trip_748"
     media = directory / "trip.mp4"
     directory.mkdir()
-    (directory / "TikTok_trip_748.text").write_text("broken", encoding="utf-8")
+    (directory / "TikTok_trip_748.txt").write_text("broken", encoding="utf-8")
     info = {"id": "748", "title": "trip", "description": "fixed", "extractor_key": "TikTok", "webpage_url": "https://t.test/748", "test_paths": [media], "filepath": str(media)}
     result = MaterialDownloader(tmp_path, factory_for(info), log=lambda _m: None).download_url("https://t.test/748")
     assert result[0].status == "success"
@@ -277,7 +277,7 @@ def test_partial_playlist_downloads_only_missing_entry(tmp_path):
     existing_media = existing_dir / "one.mp4"
     existing_dir.mkdir()
     existing_media.write_bytes(b"media")
-    (existing_dir / "Youtube_one_1.text").write_text(f"标题:one\n内容:\n素材:{existing_media.resolve()}\n", encoding="utf-8")
+    (existing_dir / "Youtube_one_1.txt").write_text(f"标题:one\n内容:\n素材:{existing_media.resolve()}\n", encoding="utf-8")
     missing = tmp_path / "Youtube_two_2" / "two.mp4"
     playlist = {"_type": "playlist", "entries": [
         {"id": "1", "title": "one", "extractor_key": "Youtube", "webpage_url": "https://y.test/1"},
@@ -305,3 +305,37 @@ def test_yt_dlp_logger_redacts_sensitive_values(tmp_path):
 def test_output_root_with_comma_is_rejected(tmp_path):
     with pytest.raises(MaterialInputError, match="逗号"):
         MaterialDownloader(tmp_path / "a,b", factory_for({}), log=lambda _m: None)
+
+
+def test_redact_text_removes_credentials_from_url_embedded_in_message():
+    from instagram.material_downloader import redact_text
+
+    value = "ERROR downloading https://user:password@example.test/video?api_key=secret&sig=hidden retrying"
+    safe = redact_text(value)
+    assert "password" not in safe
+    assert "secret" not in safe
+    assert "hidden" not in safe
+    assert "https://[REDACTED]@example.test/video" in safe
+
+
+def test_new_download_writes_txt_metadata(tmp_path):
+    media = tmp_path / "TikTok_trip_748" / "trip.mp4"
+    info = {"id": "748", "title": "trip", "extractor_key": "TikTok", "webpage_url": "https://t.test/748", "test_paths": [media], "filepath": str(media)}
+    result = MaterialDownloader(tmp_path, factory_for(info), log=lambda _m: None).download_url("https://t.test/748")
+    assert result[0].record.metadata_path.suffix == ".txt"
+
+
+def test_existing_prefers_valid_txt_then_falls_back_to_legacy_text(tmp_path):
+    directory = tmp_path / "TikTok_trip_748"
+    media = directory / "trip.mp4"
+    directory.mkdir()
+    media.write_bytes(b"media")
+    legacy = directory / "TikTok_trip_748.text"
+    modern = directory / "TikTok_trip_748.txt"
+    legacy.write_text(f"标题:legacy\n内容:\n素材:{media.resolve()}\n", encoding="utf-8")
+    modern.write_text(f"标题:modern\n内容:\n素材:{media.resolve()}\n", encoding="utf-8")
+    info = {"id": "748", "title": "trip", "extractor_key": "TikTok", "webpage_url": "https://t.test/748"}
+    downloader = MaterialDownloader(tmp_path, factory_for(info, create_files=False), log=lambda _m: None)
+    assert downloader.download_url("https://t.test/748")[0].record.metadata_path == modern
+    modern.write_text("broken", encoding="utf-8")
+    assert downloader.download_url("https://t.test/748")[0].record.metadata_path == legacy

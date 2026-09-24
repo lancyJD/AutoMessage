@@ -18,6 +18,15 @@ from instagram.posting import InstagramPostService, PostStatus
 from instagram.posting_login import PostingLoginService, read_posting_account, redact_secrets
 
 
+def _console_text(value: object) -> str:
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    return str(value).encode(encoding, errors="backslashreplace").decode(encoding)
+
+
+def _console_print(value: object) -> None:
+    print(_console_text(value))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="通过 BitBrowser 全自动发布一个 Instagram Feed 帖子")
     parser.add_argument("--media", action="append", required=True, help="本地文件路径或 HTTP/HTTPS URL；多素材可重复传入")
@@ -33,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def run(args, *, browser_service=None, connect=None, media_preparer=None, login_service=None, post_service=None) -> int:
+async def run(args, *, browser_service=None, connect=None, media_preparer=None, login_service=None, post_service=None, reporter=None) -> int:
     secrets: list[str] = []
     playwright = None
     try:
@@ -47,29 +56,29 @@ async def run(args, *, browser_service=None, connect=None, media_preparer=None, 
 
                 playwright = await async_playwright().start()
                 connect = playwright.chromium.connect_over_cdp
-            login = login_service or PostingLoginService(service, connect, log=lambda message: print(redact_secrets(message, secrets)))
+            login = login_service or PostingLoginService(service, connect, log=lambda message: _console_print(redact_secrets(message, secrets)))
             poster = post_service or InstagramPostService()
             session = await login.open_session(args.account_file, relogin=args.relogin)
             username = session.result.username
             if session.result.status is LoginStatus.NEEDS_HUMAN:
-                return _report(3, "needs_human", "login", username, len(batch.items), None, session.result.message, secrets)
+                return _report(3, "needs_human", "login", username, len(batch.items), None, session.result.message, secrets, reporter)
             if session.result.status is LoginStatus.FAILED:
-                return _report(1, "failed", "login", username, len(batch.items), None, session.result.message, secrets)
+                return _report(1, "failed", "login", username, len(batch.items), None, session.result.message, secrets, reporter)
             result = await poster.publish(session.page, batch.items, compose_caption(args.title, args.content))
             code = {PostStatus.SUCCESS: 0, PostStatus.FAILED: 1, PostStatus.NEEDS_HUMAN: 3, PostStatus.UNKNOWN: 4}[result.status]
-            return _report(code, result.status.value, result.stage, username, result.media_count, result.post_url, result.message, secrets)
+            return _report(code, result.status.value, result.stage, username, result.media_count, result.post_url, result.message, secrets, reporter)
     except (MediaInputError, ValueError) as exc:
-        return _report(2, "failed", "input", "", len(args.media or []), None, str(exc), secrets)
+        return _report(2, "failed", "input", "", len(args.media or []), None, str(exc), secrets, reporter)
     except ImportError as exc:
-        return _report(2, "failed", "dependency", "", len(args.media or []), None, str(exc), secrets)
+        return _report(2, "failed", "dependency", "", len(args.media or []), None, str(exc), secrets, reporter)
     except Exception as exc:
-        return _report(1, "failed", "runtime", "", len(args.media or []), None, str(exc), secrets)
+        return _report(1, "failed", "runtime", "", len(args.media or []), None, str(exc), secrets, reporter)
     finally:
         if playwright is not None:
             await playwright.stop()
 
 
-def _report(code, status, stage, username, media_count, post_url, message, secrets):
+def _report(code, status, stage, username, media_count, post_url, message, secrets, reporter=None):
     safe_message = redact_secrets(message, secrets)
     payload = {
         "status": status,
@@ -79,8 +88,10 @@ def _report(code, status, stage, username, media_count, post_url, message, secre
         "post_url": post_url,
         "message": safe_message,
     }
-    print(f"[{status}] stage={stage} media={media_count} {safe_message}")
-    print(json.dumps(payload, ensure_ascii=False))
+    if reporter is not None:
+        reporter(dict(payload))
+    _console_print(f"[{status}] stage={stage} media={media_count} {safe_message}")
+    _console_print(json.dumps(payload, ensure_ascii=False))
     return code
 
 

@@ -3,7 +3,7 @@ import subprocess
 import sys
 from argparse import Namespace
 
-from scripts.publish_instagram_post import build_parser, run
+from scripts.publish_instagram_post import _report, build_parser, run
 
 
 def test_help_lists_repeatable_media_and_caption_options():
@@ -49,3 +49,36 @@ def test_runtime_errors_redact_account_secrets(tmp_path, capsys):
     output = capsys.readouterr().out
     assert "demo_pass" not in output
     assert "JBSWY3DPEHPK3PXP" not in output
+
+
+def test_run_reports_one_structured_payload_on_runtime_failure(tmp_path):
+    account = tmp_path / "account.md"
+    account.write_text(
+        "| username | password | cookie | two_factor_secret |\n|---|---|---|---|\n"
+        "| demo | demo_pass |  | JBSWY3DPEHPK3PXP |\n",
+        encoding="utf-8",
+    )
+    args = Namespace(media=["photo.png"], title="", content="", account_file=account, relogin=False)
+    payloads = []
+    code = asyncio.run(run(args, media_preparer=ExplodingPreparer(), reporter=payloads.append))
+    assert code == 1
+    assert len(payloads) == 1
+    assert payloads[0]["stage"] == "runtime"
+    assert "demo_pass" not in payloads[0]["message"]
+
+
+def test_report_preserves_unknown_code_with_gbk_stdout(monkeypatch):
+    class GbkStdout:
+        encoding = "gbk"
+
+        def write(self, value):
+            value.encode("gbk")
+
+        def flush(self):
+            return None
+
+    payloads = []
+    monkeypatch.setattr(sys, "stdout", GbkStdout())
+    code = _report(4, "unknown", "share", "demo", 1, None, "결과를 확인할 수 없습니다", [], payloads.append)
+    assert code == 4
+    assert [payload["status"] for payload in payloads] == ["unknown"]

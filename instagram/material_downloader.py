@@ -113,14 +113,24 @@ def _one_line(value: object) -> str:
 def redact_text(value: object) -> str:
     text = str(value)
     text = re.sub(r"(?i)(sessionid|cookie|authorization|token)(\s*[:=]\s*)[^\s;&]+", r"\1\2[REDACTED]", text)
-    text = re.sub(r"(https?://)([^/@\s]+)@", r"\1[REDACTED]@", text)
-    try:
-        parsed = urlsplit(text)
-        if parsed.scheme in {"http", "https"} and parsed.query:
-            text = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", parsed.fragment))
-    except ValueError:
-        pass
-    return text
+
+    def sanitize_url(match) -> str:
+        raw = match.group(0)
+        trailing = ""
+        while raw and raw[-1] in ").,;]}":
+            trailing = raw[-1] + trailing
+            raw = raw[:-1]
+        try:
+            parsed = urlsplit(raw)
+            hostname = parsed.hostname or ""
+            if parsed.port:
+                hostname = f"{hostname}:{parsed.port}"
+            netloc = f"[REDACTED]@{hostname}" if parsed.username or parsed.password else hostname
+            return urlunsplit((parsed.scheme, netloc, parsed.path, "", "")) + trailing
+        except ValueError:
+            return "[REDACTED_URL]" + trailing
+
+    return re.sub(r"https?://[^\s]+", sanitize_url, text)
 
 
 def write_metadata(record: MaterialRecord) -> Path:
@@ -250,13 +260,15 @@ class MaterialDownloader:
             if path.is_dir() and path.name.startswith(f"{platform}_") and path.name.endswith(f"_{material_id}")
         ) if self.output_dir.is_dir() else None
         for directory in dict.fromkeys(path.resolve() for path in candidates):
-            metadata_files = list(directory.glob("*.text")) if directory.is_dir() else []
-            if len(metadata_files) != 1:
-                continue
-            record = self._read_complete_record(info, source_url, directory, metadata_files[0])
-            if record is not None:
-                self._emit(f"[skipped] {directory.name} 已存在")
-                return DownloadResult("skipped", redact_text(source_url), record, "已存在")
+            metadata_files = (
+                [*sorted(directory.glob("*.txt")), *sorted(directory.glob("*.text"))]
+                if directory.is_dir() else []
+            )
+            for metadata_path in metadata_files:
+                record = self._read_complete_record(info, source_url, directory, metadata_path)
+                if record is not None:
+                    self._emit(f"[skipped] {directory.name} 已存在")
+                    return DownloadResult("skipped", redact_text(source_url), record, "已存在")
         return None
 
     def _read_complete_record(self, info: dict, source_url: str, directory: Path, metadata_path: Path) -> MaterialRecord | None:
@@ -326,7 +338,7 @@ class MaterialDownloader:
             source_url=source_url,
             directory=directory,
             media_paths=tuple(dict.fromkeys(normalized_paths)),
-            metadata_path=directory / f"{key}.text",
+            metadata_path=directory / f"{key}.txt",
         )
         write_metadata(record)
         self._emit(f"[success] {record.metadata_path}")
