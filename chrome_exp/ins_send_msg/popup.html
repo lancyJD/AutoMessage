@@ -77,95 +77,6 @@
     .ok { color: var(--ok); } .fail { color: var(--danger); } .info { color: var(--ink-3); }
     #log::-webkit-scrollbar { width: 6px; }
     #log::-webkit-scrollbar-thumb { background: #d5d5e0; border-radius: 3px; }
-
-    /* ===== 会员系统 UI（auth- 前缀） ===== */
-    .auth-bar {
-      display: flex; align-items: center; gap: 6px;
-      background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-      padding: 8px 10px; margin-bottom: 10px; font-size: 12px;
-      box-shadow: 0 1px 3px rgba(30,20,60,.05);
-    }
-    .auth-bar .auth-email { font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
-    .auth-plan {
-      font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
-      background: linear-gradient(135deg, #ede9fe, #fce7f3); color: #7c3aed;
-    }
-    .auth-plan.expired { background: #fff1f2; color: var(--danger); }
-    .auth-spacer { flex: 1; }
-    .auth-bar button { padding: 4px 9px; font-size: 12px; border-radius: 8px; }
-    .auth-bar .auth-link { background: none; color: var(--brand); padding: 4px 6px; font-weight: 600; }
-    .auth-bar .auth-link:hover { background: #f3efff; }
-
-    .auth-view {
-      border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 10px;
-      background: var(--card); box-shadow: 0 1px 3px rgba(30,20,60,.05);
-    }
-    .auth-tabs { display: flex; gap: 6px; margin-bottom: 10px; background: #f1f1f6; border-radius: 10px; padding: 3px; }
-    .auth-tab { background: transparent; color: var(--ink-2); flex: 1; border-radius: 8px; padding: 7px; }
-    .auth-tab.active { background: #fff; color: var(--brand); box-shadow: 0 1px 4px rgba(30,20,60,.12); }
-    .auth-btn {
-      width: 100%; background: var(--grad-btn); color: #fff; margin-top: 12px; padding: 10px;
-      box-shadow: 0 3px 10px rgba(139,92,246,.3);
-    }
-    .auth-btn:hover:not(:disabled) { filter: brightness(1.08); }
-    .auth-msg { font-size: 12px; margin: 6px 0; min-height: 14px; }
-    .auth-msg.err { color: var(--danger); }
-    .auth-msg.ok { color: var(--ok); }
-
-    .auth-panel {
-      border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px;
-      font-size: 13px; background: var(--card); box-shadow: 0 1px 3px rgba(30,20,60,.05);
-    }
-    .auth-panel h4 { margin: 0 0 8px; font-size: 13px; color: var(--ink); display: flex; align-items: center; font-weight: 700; }
-    .auth-panel .auth-close { margin-left: auto; background: none; color: var(--ink-3); padding: 2px 7px; font-size: 15px; border-radius: 7px; }
-    .auth-panel .auth-close:hover { background: #f1f1f6; color: var(--ink); }
-    .auth-kv { display: flex; justify-content: space-between; padding: 4px 0; color: var(--ink-2); }
-    .auth-kv b { color: var(--ink); font-weight: 600; }
-    .auth-panel .auth-btn-row { display: flex; gap: 8px; margin-top: 10px; }
-    .auth-panel .auth-btn-row button { flex: 1; }
-    .auth-device { display: flex; align-items: center; gap: 8px; padding: 7px 4px; border-top: 1px solid var(--line); font-size: 12px; }
-    .auth-device .meta { flex: 1; color: var(--ink-2); }
-    .auth-device .meta .name { font-weight: 600; color: var(--ink); }
-    .auth-device .meta .sub { color: var(--ink-3); font-size: 11px; }
-    .auth-device.current { background: #f8f5ff; border-radius: 9px; padding-left: 8px; border-top: none; margin-top: 4px; }
-    .auth-device button { background: #fff1f2; color: var(--danger); padding: 5px 9px; font-size: 12px; border-radius: 8px; }
-    .auth-device button:hover { background: #ffe4e6; }
-    .auth-center { text-align: center; color: var(--ink-3); font-size: 12px; padding: 14px; }
-    .auth-divider { height: 1px; background: var(--line); margin: 10px 0; }
-
-    /* ===== 钱包支付面板 ===== */
-    .wallet-net { font-weight: 700; color: var(--brand); font-size: 13px; margin-bottom: 6px; }
-    .wallet-qr {
-      width: 180px; height: 180px; border-radius: 14px; padding: 8px; background: #fff;
-      border: 1.5px solid var(--line); box-shadow: 0 2px 10px rgba(30,20,60,.08);
-    }
-    .wallet-amt { font-size: 17px; font-weight: 800; color: var(--ink); margin: 8px 0 2px; }
-    .wallet-ord { font-size: 11px; color: var(--ink-3); font-family: Consolas, monospace; }
-    .wallet-addr {
-      font-size: 11px; color: var(--ink-2); font-family: Consolas, monospace;
-      background: #f6f4ff; border: 1px dashed #d8ccf7; border-radius: 9px;
-      padding: 7px 8px; margin: 8px 0; word-break: break-all; text-align: left;
-    }
-    .wallet-btns { display: flex; gap: 8px; margin-top: 4px; }
-    .wallet-btns button { flex: 1; }
-    .wallet-step {
-      text-align: left; font-size: 11px; color: var(--ink-3); line-height: 1.7;
-      padding-left: 18px; margin: 8px 0 4px;
-    }
-
-    /* ===== 购买前添加管理员引导 ===== */
-    .support-note {
-      background: linear-gradient(135deg, #fff7ed, #fef2f8);
-      border: 1px solid #fbcfe8; border-radius: 10px;
-      padding: 9px 10px; margin-bottom: 10px; text-align: left;
-    }
-    .support-note .txt { font-size: 12px; color: #9d174d; font-weight: 600; line-height: 1.5; margin-bottom: 7px; }
-    .support-btn {
-      width: 100%; background: linear-gradient(135deg, #2aabee, #0088cc);
-      color: #fff; padding: 9px; font-size: 13px; border-radius: 9px;
-      box-shadow: 0 3px 10px rgba(42,171,238,.3);
-    }
-    .support-btn:hover:not(:disabled) { filter: brightness(1.08); }
   </style>
 </head>
 <body>
@@ -176,80 +87,6 @@
       <h3>SuperDM-SendTest</h3>
       <div class="sub">批量私信助手</div>
     </div>
-  </div>
-
-  <!-- ===== 账户条 ===== -->
-  <div id="account-bar" class="auth-bar">
-    <span id="auth-status" class="auth-email">检查登录…</span>
-    <span class="auth-spacer"></span>
-    <span id="auth-actions"></span>
-  </div>
-
-  <!-- ===== 未登录：登录 / 注册 ===== -->
-  <div id="auth-view" class="auth-view" hidden>
-    <div class="auth-tabs">
-      <button id="tab-login" class="auth-tab active">登录</button>
-      <button id="tab-register" class="auth-tab">注册</button>
-    </div>
-    <div id="auth-msg" class="auth-msg"></div>
-    <label>邮箱</label>
-    <input id="auth-email" class="auth-input" type="email" placeholder="you@example.com" autocomplete="username" />
-    <label>密码</label>
-    <input id="auth-password" class="auth-input" type="password" placeholder="至少 8 位" autocomplete="current-password" />
-    <button id="auth-submit" class="auth-btn">登录</button>
-    <div class="hint">本插件需要有效会员才能使用发送功能。登录即表示同意使用条款。</div>
-  </div>
-
-  <!-- ===== 会员面板（登录后展开） ===== -->
-  <div id="membership-panel" class="auth-panel" hidden>
-    <h4>会员状态 <button class="auth-close" data-close="membership-panel">×</button></h4>
-    <div class="auth-kv"><span>套餐</span><b id="mem-plan">—</b></div>
-    <div class="auth-kv"><span>状态</span><b id="mem-state">—</b></div>
-    <div class="auth-kv"><span>到期</span><b id="mem-expire">—</b></div>
-    <div class="auth-kv"><span>设备</span><b id="mem-devices">—</b></div>
-    <div id="mem-expired-note" class="auth-msg err" hidden>会员已过期，请续费后继续使用。</div>
-    <div class="auth-btn-row">
-      <button id="mem-activate" class="ghost">激活 License</button>
-      <button id="mem-renew" class="ghost">续费 / 购买</button>
-    </div>
-    <div id="license-box" hidden>
-      <div class="auth-divider"></div>
-      <label>License Key（XXXX-XXXX-XXXX-XXXX）</label>
-      <input id="license-key" class="auth-input" placeholder="XXXX-XXXX-XXXX-XXXX" />
-      <button id="license-submit" class="auth-btn">激活</button>
-      <div id="license-msg" class="auth-msg"></div>
-    </div>
-    <div id="plans-box" hidden>
-      <div class="auth-divider"></div>
-      <div id="plans-list" class="auth-center">加载套餐…</div>
-    </div>
-  </div>
-
-  <!-- ===== 钱包支付面板 ===== -->
-  <div id="wallet-panel" class="auth-panel" hidden>
-    <h4>钱包支付 <button class="auth-close" data-close="wallet-panel">×</button></h4>
-    <div class="auth-center" style="padding:6px">
-      <div id="wallet-network" class="wallet-net">加载中…</div>
-      <img id="wallet-qr" class="wallet-qr" alt="收款二维码" />
-      <div id="wallet-amount" class="wallet-amt">—</div>
-      <div id="wallet-order" class="wallet-ord"></div>
-      <div id="wallet-addr" class="wallet-addr">—</div>
-      <div class="wallet-btns">
-        <button id="wallet-copy" class="ghost">复制钱包地址</button>
-        <button id="wallet-paid" class="ghost">我已支付·刷新会员</button>
-      </div>
-      <ol class="wallet-step">
-        <li>用钱包扫码或复制地址，向该地址转入对应金额的 USDT</li>
-        <li>转账完成后点击「我已支付」，管理员确认到账后会员自动开通</li>
-      </ol>
-      <div id="wallet-msg" class="auth-msg"></div>
-    </div>
-  </div>
-
-  <!-- ===== 设备面板（登录后展开） ===== -->
-  <div id="devices-panel" class="auth-panel" hidden>
-    <h4>我的设备 <button class="auth-close" data-close="devices-panel">×</button></h4>
-    <div id="devices-list" class="auth-center">加载中…</div>
   </div>
 
   <!-- ===== 应用主体（发送功能） ===== -->
@@ -279,11 +116,6 @@
     <div id="progress"></div>
     <div id="log"></div>
   </div>
-
-  <!-- 会员系统脚本（经典脚本，SW 与 popup 通用） -->
-  <script src="lib/config.js"></script>
-  <script src="lib/device.js"></script>
-  <script src="lib/auth.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

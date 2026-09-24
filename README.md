@@ -22,3 +22,17 @@ profile = manager.create_browser("instagram-001", "instagram-group-id", Allocati
 ```
 
 同一分组内真实出口 IP 不重复；不同分组可以复用。随机分配结果会持久保存，重启窗口不会重新随机。`facebook` 和 `instagram` 目前仅建立独立包边界，账号 Cookie 与自动化将在后续阶段实现。
+
+## 自动素材下载
+
+安装 `yt-dlp` 后，素材默认保存到 `C:\Users\DELL\Pictures\sucai`：
+
+```powershell
+python -m pip install yt-dlp
+python -m scripts.download_material url "帖子链接"
+python -m scripts.download_material batch "links.txt"
+python -m scripts.download_material search "旅行风景"
+python -m scripts.download_material search "旅行风景" --count 5
+```
+
+YouTube 支持关键词搜索；TikTok 和 Instagram 需要提供具体帖子链接。部分视频格式需要系统已经安装 FFmpeg。

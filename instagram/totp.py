@@ -51,7 +51,7 @@ def generate_totp(
         log(f"[2FA] 当前验证码: {code}")
     return code
 
-
+# python.exe -m instagram.totp
 def main() -> None:
     """Prompt for a TOTP secret and print its current code."""
     while True:
